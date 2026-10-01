@@ -245,7 +245,7 @@ with tab1:
 
     letzte_aktualisierung = datetime.now().strftime("%d.%m.%Y um %H:%M:%S Uhr")
 
-    st.markdown(f"**Letztes Auto-Update:** {letzte_aktualisierung} (Aktualisiert alle 15 Sekunden)")
+    st.markdown(f"**Letztes Auto-Update:** {letzte_aktualisierung} (Aktualisiert alle 12,5 Sekunden)")
 
     m1, m2, m3, m4, m5 = st.columns(5)
     
