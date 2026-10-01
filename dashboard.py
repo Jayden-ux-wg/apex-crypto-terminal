@@ -19,8 +19,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Automatischer Refresh alle 12,5 Sekunden (12500 Millisekunden), damit sich alles von selbst aktualisiert!
-st_autorefresh(interval=12500, key="datenschleife_counter")
+# Automatischer Refresh alle 10 Sekunden (10000 Millisekunden), damit sich alles von selbst aktualisiert!
+st_autorefresh(interval=10000, key="datenschleife_counter")
 
 # ==============================================================================
 # 2. HILFSFUNKTIONEN (DATEI-HANDLING, FORMATE & WECHSELKURSE)
@@ -122,7 +122,7 @@ def show_update_dialog():
     st.markdown("""
     Willkommen zurück! Die wichtigsten Optimierungen sind jetzt aktiv:
     
-    * 🔄 **Auto-Refresh (12,5s):** Das Terminal aktualisiert Kurse, Metriken und Charts nun vollautomatisch im 12,5-Sekunden-Takt.
+    * 🔄 **Auto-Refresh (12,5s):** Das Terminal aktualisiert Kurse, Metriken und Charts nun vollautomatisch im 10-Sekunden-Takt.
     * 🤖 **Automatischer Signal-Scanner:** Keine sinnlosen Klick-Buttons mehr – die Mini-KI erkennt echte Marktsignale von alleine.
     * 📈 **TradingView-Style Charts:** Live-Kerzenansicht mit optimierter Zeitzone und dynamischen RSI-Grenzen.
     """)
@@ -140,7 +140,7 @@ if not st.session_state["seen_update_dialog"]:
 
 st.title("⚡ Apex Krypto & ETF-Terminal")
 st.caption(
-    "Echtzeit-Analyse mit Auto-Refresh (15s), Interaktive Kerzen-Charts, "
+    "Echtzeit-Analyse mit Auto-Refresh (10s), Interaktive Kerzen-Charts, "
     "Sekundengenaues Automatik-Logbuch & Adaptive Mini-KI"
 )
 
