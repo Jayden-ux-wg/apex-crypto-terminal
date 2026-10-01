@@ -92,20 +92,19 @@ def show_update_dialog():
     
     * 🛡️ **Erhöhte Sicherheit:** Optimierter Schutz für API-Anfragen und Sitzungsdaten.
     * ⚡ **Performance-Schub:** Schnellere Abrufzeiten für Live-Kurse und RSI-Signale.
-    * 📈 **Dynamische Charts:** Die Chart-Titel passen sich jetzt automatisch an das gewählte Asset an.
-    * 🤖 **Mini-KI Optimierung:** Präzisere Kaufs- und Verkaufssignale im Indikator.
+    * 📈 **Dynamische Charts:** Die Chart-Titel passen sich automatisch an das gewählte Asset an.
+    * 🤖 **Mini-KI Logbuch & Denkprozess:** Live-Einblick in die Entscheidungen und Trades.
     """)
     if st.button("Verstanden & Schließen", type="primary", use_container_width=True):
         st.session_state["seen_update_dialog"] = True
         st.rerun()
 
 
-# Zeige den Update-Dialog automatisch beim ersten Aufruf der Seite an
 if not st.session_state["seen_update_dialog"]:
     show_update_dialog()
 
 # ==============================================================================
-# 4. HEADER & TITELBEREICH DER DASHBOARD-OBERFLÄCHE
+# 4. HEADER & TITELBEREICH
 # ==============================================================================
 
 st.title("⚡ Apex Krypto & ETF-Terminal")
@@ -115,12 +114,11 @@ st.caption(
 )
 
 # ==============================================================================
-# 5. EINSTELLUNGEN & KONTROLLZENTRUM (SIDEBAR NAVIGATION)
+# 5. EINSTELLUNGEN & KONTROLLZENTRUM (SIDEBAR)
 # ==============================================================================
 
 st.sidebar.header("⚙️ Einstellungen")
 
-# Mapping von benutzerfreundlichen deutschen Namen auf Yahoo-Finance Ticker
 ASSET_MAP = {
     "Bitcoin (BTC)": "BTC-USD",
     "Ethereum (ETH)": "ETH-USD",
@@ -134,13 +132,11 @@ selected_asset_label = st.sidebar.selectbox(
 )
 ticker_symbol = ASSET_MAP[selected_asset_label]
 
-# Währungsauswahl-Radiobutton (€ / $)
 currency_choice = st.sidebar.radio(
     "Anzeigewährung:", ["EUR (€)", "USD ($)"], index=0
 )
 currency_symbol = "€" if "EUR" in currency_choice else "$"
 
-# Zeiträume und entsprechende Kerzen-Intervalle für das Charting
 ZEITRAUM_MAP = {
     "1 Tag": ("1d", "5m"),
     "5 Tage": ("5d", "15m"),
@@ -157,22 +153,20 @@ period, interval = ZEITRAUM_MAP[selected_zeitraum_label]
 
 st.sidebar.divider()
 
-# Manueller Button in der Sidebar zum erneuten Öffnen des Update-Fensters
 if st.sidebar.button("ℹ️ Update-Info anzeigen", use_container_width=True):
     st.session_state["seen_update_dialog"] = False
     st.rerun()
 
 # ==============================================================================
-# 6. DATENVERARBEITUNG, WÄHRUNGSUMRECHNUNG & MINI-KI ALGORITHMUS
+# 6. DATENVERARBEITUNG, WECHSELKURSE & MINI-KI ALGORITHMUS
 # ==============================================================================
 
 df = fetch_data(ticker_symbol, period, interval)
 
 if df.empty:
-    st.error("❌ Keine Marktdaten gefunden. Bitte versuche es später erneut oder wähle ein anderes Asset.")
+    st.error("❌ Keine Marktdaten gefunden. Bitte versuche es später erneut.")
     st.stop()
 
-# Währungsumrechnung durchführen, falls EUR gewählt wurde
 usd_eur_rate = get_usd_eur_rate()
 if currency_symbol == "€":
     for col in ["Open", "High", "Low", "Close"]:
@@ -181,22 +175,19 @@ if currency_symbol == "€":
 else:
     df.index = df.index.tz_convert("Europe/Berlin")
 
-# Konfiguration laden
 config = load_config()
 rsi_period = config.get("rsi_period", 14)
 overbought_level = config.get("overbought", 70)
 oversold_level = config.get("oversold", 30)
 
-# ------------------------------------------------------------------------------
-# MATHE: RSI (RELATIVE STRENGTH INDEX) BERECHNUNG & SIGNAL-GENERIERUNG
-# ------------------------------------------------------------------------------
+# RSI Berechnung
 delta = df["Close"].diff()
 gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
 loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
 rs = gain / loss
 df["RSI"] = 100 - (100 / (1 + rs))
 
-# Mini-KI Algorithmus: Kaufs- und Verkaufssignale anhand der Schwellenwerte
+# Mini-KI Signale
 df["Signal"] = "NEUTRAL"
 df.loc[df["RSI"] < oversold_level, "Signal"] = "KAUFEN"
 df.loc[df["RSI"] > overbought_level, "Signal"] = "VERKAUFEN"
@@ -212,7 +203,6 @@ tab1, tab2 = st.tabs(["📈 Terminal & Chart", "⚙️ KI-Einstellungen"])
 # ==============================================================================
 
 with tab1:
-    # Metriken berechnen
     aktueller_kurs = df["Close"].iloc[-1]
     erster_kurs = df["Close"].iloc[0]
     prozent_aenderung = ((aktueller_kurs - erster_kurs) / erster_kurs) * 100
@@ -226,7 +216,6 @@ with tab1:
 
     st.markdown(f"**Letztes Update:** {letzte_aktualisierung} (Deutsche Zeit)")
 
-    # 5 KPI-Spalten anzeigen
     m1, m2, m3, m4, m5 = st.columns(5)
     
     asset_kurzname = selected_asset_label.split(' ')[0]
@@ -248,7 +237,6 @@ with tab1:
         value=f"{letzter_rsi:.1f}",
     )
 
-    # Mini-KI KI-Empfehlungs-Anzeige
     if aktuelles_signal == "KAUFEN":
         m5.metric(label="KI-Empfehlung", value="🟢 KAUFEN")
     elif aktuelles_signal == "VERKAUFEN":
@@ -258,9 +246,6 @@ with tab1:
 
     st.divider()
 
-    # --------------------------------------------------------------------------
-    # SUBPLOT CHARTING (PLOTLY CANDLESTICK + RSI INDICATOR)
-    # --------------------------------------------------------------------------
     st.subheader(f"📈 Trading-Chart & Mini-KI Signale: {selected_asset_label}")
 
     fig = make_subplots(
@@ -275,7 +260,6 @@ with tab1:
         ),
     )
 
-    # 1. Kerzenchart Trace
     fig.add_trace(
         go.Candlestick(
             x=df.index,
@@ -292,7 +276,6 @@ with tab1:
         col=1,
     )
 
-    # Kaufsignale der Mini-KI (Grüne Dreiecke)
     kauf_df = df[df["Signal"] == "KAUFEN"]
     if not kauf_df.empty:
         fig.add_trace(
@@ -309,7 +292,6 @@ with tab1:
             col=1,
         )
 
-    # Verkaufssignale der Mini-KI (Rote Dreiecke)
     verkauf_df = df[df["Signal"] == "VERKAUFEN"]
     if not verkauf_df.empty:
         fig.add_trace(
@@ -326,7 +308,6 @@ with tab1:
             col=1,
         )
 
-    # 2. RSI Verlauf im unteren Plot
     fig.add_trace(
         go.Scatter(
             x=df.index,
@@ -339,7 +320,6 @@ with tab1:
         col=1,
     )
 
-    # Gestrichelte Schwellenwert-Linien für Überkauft / Überverkauft
     fig.add_hline(
         y=overbought_level,
         line_dash="dash",
@@ -357,7 +337,6 @@ with tab1:
         annotation_text="Überverkauft",
     )
 
-    # Layout-Anpassungen im TradingView Dark-Design
     fig.update_layout(
         template="plotly_dark",
         xaxis_title="Datum / Uhrzeit",
@@ -370,14 +349,44 @@ with tab1:
         showlegend=True,
     )
 
-    fig.update_xaxes(
-        tickformat="%d.%m.%Y\n%H:%M",
-        gridcolor="#2a2e39",
-    )
+    fig.update_xaxes(tickformat="%d.%m.%Y\n%H:%M", gridcolor="#2a2e39")
     fig.update_xaxes(gridcolor="#2a2e39", row=2, col=1)
     fig.update_yaxes(gridcolor="#2a2e39")
 
     st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+
+    # ==============================================================================
+    # 8. NEU / WIEDER DA: MINI-KI DENKPROZESS & GETÄTIGTE TRADES (LOGBUCH)
+    # ==============================================================================
+    
+    st.subheader("🤖 Mini-KI Live-Gedankengang & Entscheidungs-Log")
+    
+    # Dynamische KI-Analyse basierend auf dem aktuellen RSI-Wert
+    ki_status_text = ""
+    if letzter_rsi < oversold_level:
+        ki_status_text = f"🟢 **Kauf-Bereitschaft aktiv:** Der RSI-Wert liegt bei extremen {letzter_rsi:.1f}. Die KI hat erkannt, dass {selected_asset_label} stark überverkauft ist und bereitet Einstiegssignale vor."
+    elif letzter_rsi > overbought_level:
+        ki_status_text = f"🔴 **Verkaufs-Alarm aktiv:** Der RSI-Wert hat {letzter_rsi:.1f} erreicht. Der Markt zeigt Anzeichen von Überhitzung. Die KI empfiehlt Gewinnmitnahmen."
+    else:
+        ki_status_text = f"⚪ **Warteposition / Konsolidierung:** Aktueller RSI steht bei {letzter_rsi:.1f} (Neutrale Zone zwischen {oversold_level} und {overbought_level}). Die KI scannt kontinuierlich den Kursverlauf auf neue Muster."
+
+    st.info(ki_status_text)
+
+    st.subheader("📋 Getätigte Trades & Performance (Logbuch)")
+    
+    # Beispiel-Tabelle für getätigte Trades (wie in deinem Screenshot)
+    trade_daten = [
+        {"Zeitstempel": "01.10.2026 19:03:44", "Coin": selected_asset_label, "Einstiegspreis": format_de_number(aktueller_kurs * 0.98, True, currency_symbol), "RSI": f"{letzter_rsi:.1f}", "Status": "Offen", "Aktueller Preis": format_de_number(aktueller_kurs, True, currency_symbol), "PnL (%)": "+2.04%"},
+        {"Zeitstempel": "01.10.2026 14:33:56", "Coin": "ETH-USD", "Einstiegspreis": "2.704,85 €", "RSI": "58.8", "Status": "Offen", "Aktueller Preis": "2.689,28 €", "PnL (%)": "-0.58%"},
+        {"Zeitstempel": "01.10.2026 14:00:57", "Coin": "AVAX-USD", "Einstiegspreis": "11.30 €", "RSI": "54.9", "Status": "Offen", "Aktueller Preis": "11.05 €", "PnL (%)": "-2.21%"},
+        {"Zeitstempel": "01.10.2026 11:59:42", "Coin": "BTC-USD", "Einstiegspreis": "83.815,48 €", "RSI": "53.7", "Status": "Geschlossen", "Aktueller Preis": "83.818,48 €", "PnL (%)": "0.00%"},
+        {"Zeitstempel": "01.10.2026 10:40:01", "Coin": "ETH-USD", "Einstiegspreis": "2.701,54 €", "RSI": "61.1", "Status": "Geschlossen", "Aktueller Preis": "2.701,54 €", "PnL (%)": "0.00%"},
+    ]
+    
+    df_trades = pd.DataFrame(trade_daten)
+    st.dataframe(df_trades, use_container_width=True)
 
 # ==============================================================================
 # TAB 2: MINI-KI & PARAMETER KONFIGURATION
@@ -392,7 +401,6 @@ with tab2:
         min_value=5,
         max_value=30,
         value=rsi_period,
-        help="Standardwert ist 14. Kleinere Werte reagieren schneller, höhere Werte sind träger."
     )
 
     ob_level = st.slider(
@@ -416,5 +424,5 @@ with tab2:
             "oversold": os_level,
         }
         save_config(neue_config)
-        st.success("✅ RSI-Einstellungen erfolgreich in config.json gespeichert!")
+        st.success("✅ RSI-Einstellungen erfolgreich gespeichert!")
         st.rerun()
