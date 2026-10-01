@@ -7,9 +7,10 @@ from plotly.subplots import make_subplots
 import streamlit as st
 import yfinance as yf
 
-# ==========================================
-# 1. PAGE CONFIG
-# ==========================================
+# ==============================================================================
+# 1. SEITEN-EINSTELLUNGEN & DESIGN (STREAMLIT CONFIGURATION)
+# ==============================================================================
+
 st.set_page_config(
     page_title="Apex Krypto & ETF-Terminal",
     page_icon="⚡",
@@ -17,11 +18,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ==========================================
-# 2. HILFSFUNKTIONEN (FORMATE, DATEIEN & DATEN)
-# ==========================================
+# ==============================================================================
+# 2. HILFSFUNKTIONEN (DATEI-HANDLING, FORMATE & WECHSELKURSE)
+# ==============================================================================
+
+
 def format_de_number(val, is_currency=True, currency_symbol="€"):
-    """Formatiert Zahlen ins deutsche Format (z.B. 1.234,56 €)"""
+    """Formatiert Zahlen ins deutsche Format mit Punkte-Tausendertrennung (z.B. 1.234,56 €)"""
     if pd.isna(val) or val is None:
         return "N/A"
     formatted = f"{val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -31,7 +34,7 @@ def format_de_number(val, is_currency=True, currency_symbol="€"):
 
 
 def load_config():
-    """Lädt die gespeicherten Einstellungen oder nutzt Standardwerte"""
+    """Lädt die lokalen Einstellungen für Indikatoren und Parameter aus der JSON-Datei"""
     if os.path.exists("config.json"):
         try:
             with open("config.json", "r") as f:
@@ -42,7 +45,7 @@ def load_config():
 
 
 def save_config(config_data):
-    """Speichert die Einstellungen in config.json"""
+    """Speichert die geänderten Indikator-Einstellungen lokal ab"""
     try:
         with open("config.json", "w") as f:
             json.dump(config_data, f)
@@ -52,26 +55,31 @@ def save_config(config_data):
 
 @st.cache_data(ttl=60)
 def fetch_data(symbol, period, interval):
-    """Holt historische Kursdaten von yfinance"""
+    """Holt historische Finanzdaten und Live-Kurse direkt über die Yahoo Finance API"""
     try:
         ticker = yf.Ticker(symbol)
         df = ticker.history(period=period, interval=interval)
         return df
-    except Exception:
+    except Exception as e:
+        st.error(f"Fehler beim Abrufen der Finanzdaten: {e}")
         return pd.DataFrame()
 
 
 def get_usd_eur_rate():
+    """Holt den aktuellen Live-Wechselkurs von USD zu EUR für die automatische Umrechnung"""
     try:
         eur_data = yf.Ticker("EURUSD=X").history(period="1d")
-        return eur_data["Close"].iloc[-1]
+        if not eur_data.empty:
+            return eur_data["Close"].iloc[-1]
+        return 0.92
     except Exception:
         return 0.92  # Fallback Wechselkurs USD zu EUR
 
 
-# ==========================================
-# 3. UPDATE POP-UP (DIALOG) FOR USERS / FRIENDS
-# ==========================================
+# ==============================================================================
+# 3. UPDATE POP-UP (DIALOG) FÜR NUTZER & FREUNDE
+# ==============================================================================
+
 if "seen_update_dialog" not in st.session_state:
     st.session_state["seen_update_dialog"] = False
 
@@ -80,7 +88,7 @@ if "seen_update_dialog" not in st.session_state:
 def show_update_dialog():
     st.success("🔒 **Sicherheits- & Performance-Update erfolgreich durchgeführt!**")
     st.markdown("""
-    Willkommen zurück! Folgende Verbesserungen wurden installiert:
+    Willkommen zurück! Folgende Verbesserungen wurden auf dem Terminal installiert:
     
     * 🛡️ **Erhöhte Sicherheit:** Optimierter Schutz für API-Anfragen und Sitzungsdaten.
     * ⚡ **Performance-Schub:** Schnellere Abrufzeiten für Live-Kurse und RSI-Signale.
@@ -92,25 +100,27 @@ def show_update_dialog():
         st.rerun()
 
 
-# Pop-up beim Betreten der Seite anzeigen, falls noch nicht gesehen
+# Zeige den Update-Dialog automatisch beim ersten Aufruf der Seite an
 if not st.session_state["seen_update_dialog"]:
     show_update_dialog()
 
-# ==========================================
-# 4. HEADER & TITEL
-# ==========================================
+# ==============================================================================
+# 4. HEADER & TITELBEREICH DER DASHBOARD-OBERFLÄCHE
+# ==============================================================================
+
 st.title("⚡ Apex Krypto & ETF-Terminal")
 st.caption(
     "Echtzeit-Analyse, Interaktive Kerzen-Charts (TradingView-Style), "
     "Automatisches Logbuch & Adaptive Mini-KI mit RSI-Signalen"
 )
 
-# ==========================================
-# 5. EINSTELLUNGEN (SIDEBAR)
-# ==========================================
+# ==============================================================================
+# 5. EINSTELLUNGEN & KONTROLLZENTRUM (SIDEBAR NAVIGATION)
+# ==============================================================================
+
 st.sidebar.header("⚙️ Einstellungen")
 
-# Asset-Auswahl mit deutscher Beschriftung
+# Mapping von benutzerfreundlichen deutschen Namen auf Yahoo-Finance Ticker
 ASSET_MAP = {
     "Bitcoin (BTC)": "BTC-USD",
     "Ethereum (ETH)": "ETH-USD",
@@ -124,13 +134,13 @@ selected_asset_label = st.sidebar.selectbox(
 )
 ticker_symbol = ASSET_MAP[selected_asset_label]
 
-# Währungsauswahl (€ oder $)
+# Währungsauswahl-Radiobutton (€ / $)
 currency_choice = st.sidebar.radio(
     "Anzeigewährung:", ["EUR (€)", "USD ($)"], index=0
 )
 currency_symbol = "€" if "EUR" in currency_choice else "$"
 
-# Zeiträume auf Deutsch
+# Zeiträume und entsprechende Kerzen-Intervalle für das Charting
 ZEITRAUM_MAP = {
     "1 Tag": ("1d", "5m"),
     "5 Tage": ("5d", "15m"),
@@ -145,21 +155,24 @@ selected_zeitraum_label = st.sidebar.select_slider(
 )
 period, interval = ZEITRAUM_MAP[selected_zeitraum_label]
 
-# Button in der Sidebar für manuellen Aufruf des Pop-ups
-if st.sidebar.button("ℹ️ Update-Info anzeigen"):
+st.sidebar.divider()
+
+# Manueller Button in der Sidebar zum erneuten Öffnen des Update-Fensters
+if st.sidebar.button("ℹ️ Update-Info anzeigen", use_container_width=True):
     st.session_state["seen_update_dialog"] = False
     st.rerun()
 
-# ==========================================
-# 6. DATEN HOLEN, UMRECHNEN & RSI ALGORITHMUS (MINI-KI)
-# ==========================================
+# ==============================================================================
+# 6. DATENVERARBEITUNG, WÄHRUNGSUMRECHNUNG & MINI-KI ALGORITHMUS
+# ==============================================================================
+
 df = fetch_data(ticker_symbol, period, interval)
 
 if df.empty:
-    st.error("❌ Keine Daten gefunden. Bitte versuche es später erneut.")
+    st.error("❌ Keine Marktdaten gefunden. Bitte versuche es später erneut oder wähle ein anderes Asset.")
     st.stop()
 
-# EUR-Umrechnung
+# Währungsumrechnung durchführen, falls EUR gewählt wurde
 usd_eur_rate = get_usd_eur_rate()
 if currency_symbol == "€":
     for col in ["Open", "High", "Low", "Close"]:
@@ -168,51 +181,57 @@ if currency_symbol == "€":
 else:
     df.index = df.index.tz_convert("Europe/Berlin")
 
-# Config laden für KI / RSI Algorithmus
+# Konfiguration laden
 config = load_config()
 rsi_period = config.get("rsi_period", 14)
 overbought_level = config.get("overbought", 70)
 oversold_level = config.get("oversold", 30)
 
-# RSI Berechnung & KI-Signale
+# ------------------------------------------------------------------------------
+# MATHE: RSI (RELATIVE STRENGTH INDEX) BERECHNUNG & SIGNAL-GENERIERUNG
+# ------------------------------------------------------------------------------
 delta = df["Close"].diff()
 gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
 loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
 rs = gain / loss
 df["RSI"] = 100 - (100 / (1 + rs))
 
-# KI Signal-Generierung (Kauf/Verkauf)
+# Mini-KI Algorithmus: Kaufs- und Verkaufssignale anhand der Schwellenwerte
 df["Signal"] = "NEUTRAL"
 df.loc[df["RSI"] < oversold_level, "Signal"] = "KAUFEN"
 df.loc[df["RSI"] > overbought_level, "Signal"] = "VERKAUFEN"
 
-# ==========================================
-# 7. TABS STRUKTUR
-# ==========================================
+# ==============================================================================
+# 7. HAUPT-TABS STRUKTURIERUNG
+# ==============================================================================
+
 tab1, tab2 = st.tabs(["📈 Terminal & Chart", "⚙️ KI-Einstellungen"])
 
-# ==========================================
-# TAB 1: KENNZAHLEN & CHART
-# ==========================================
+# ==============================================================================
+# TAB 1: ECHTZEIT-KENNZAHLEN & INTERAKTIVER TRADING-CHART
+# ==============================================================================
+
 with tab1:
+    # Metriken berechnen
     aktueller_kurs = df["Close"].iloc[-1]
     erster_kurs = df["Close"].iloc[0]
     prozent_aenderung = ((aktueller_kurs - erster_kurs) / erster_kurs) * 100
 
     hoch_kurs = df["High"].max()
     tief_kurs = df["Low"].min()
-    letzter_rsi = (
-        df["RSI"].iloc[-1] if not pd.isna(df["RSI"].iloc[-1]) else 50.0
-    )
+    letzter_rsi = df["RSI"].iloc[-1] if not pd.isna(df["RSI"].iloc[-1]) else 50.0
     aktuelles_signal = df["Signal"].iloc[-1]
 
     letzte_aktualisierung = df.index[-1].strftime("%d.%m.%Y um %H:%M Uhr")
 
     st.markdown(f"**Letztes Update:** {letzte_aktualisierung} (Deutsche Zeit)")
 
+    # 5 KPI-Spalten anzeigen
     m1, m2, m3, m4, m5 = st.columns(5)
+    
+    asset_kurzname = selected_asset_label.split(' ')[0]
     m1.metric(
-        label=f"Aktueller Kurs ({selected_asset_label.split(' ')[0]})",
+        label=f"Aktueller Kurs ({asset_kurzname})",
         value=format_de_number(aktueller_kurs, True, currency_symbol),
         delta=f"{prozent_aenderung:+.2f}%",
     )
@@ -229,7 +248,7 @@ with tab1:
         value=f"{letzter_rsi:.1f}",
     )
 
-    # Signal Status mit Symbol & Farbe
+    # Mini-KI KI-Empfehlungs-Anzeige
     if aktuelles_signal == "KAUFEN":
         m5.metric(label="KI-Empfehlung", value="🟢 KAUFEN")
     elif aktuelles_signal == "VERKAUFEN":
@@ -239,10 +258,10 @@ with tab1:
 
     st.divider()
 
-    # CHART MIT SUBPLOT (KERZEN + RSI + SIGNALE)
-    st.subheader(
-        f"📈 Trading-Chart & Mini-KI Signale: {selected_asset_label}"
-    )
+    # --------------------------------------------------------------------------
+    # SUBPLOT CHARTING (PLOTLY CANDLESTICK + RSI INDICATOR)
+    # --------------------------------------------------------------------------
+    st.subheader(f"📈 Trading-Chart & Mini-KI Signale: {selected_asset_label}")
 
     fig = make_subplots(
         rows=2,
@@ -256,7 +275,7 @@ with tab1:
         ),
     )
 
-    # 1. Kerzenchart
+    # 1. Kerzenchart Trace
     fig.add_trace(
         go.Candlestick(
             x=df.index,
@@ -273,7 +292,7 @@ with tab1:
         col=1,
     )
 
-    # Kaufsignale (Grüne Dreiecke)
+    # Kaufsignale der Mini-KI (Grüne Dreiecke)
     kauf_df = df[df["Signal"] == "KAUFEN"]
     if not kauf_df.empty:
         fig.add_trace(
@@ -290,7 +309,7 @@ with tab1:
             col=1,
         )
 
-    # Verkaufssignale (Rote Dreiecke)
+    # Verkaufssignale der Mini-KI (Rote Dreiecke)
     verkauf_df = df[df["Signal"] == "VERKAUFEN"]
     if not verkauf_df.empty:
         fig.add_trace(
@@ -307,7 +326,7 @@ with tab1:
             col=1,
         )
 
-    # 2. RSI Verlauf im unteren Subplot
+    # 2. RSI Verlauf im unteren Plot
     fig.add_trace(
         go.Scatter(
             x=df.index,
@@ -320,7 +339,7 @@ with tab1:
         col=1,
     )
 
-    # RSI Schwellenlinien
+    # Gestrichelte Schwellenwert-Linien für Überkauft / Überverkauft
     fig.add_hline(
         y=overbought_level,
         line_dash="dash",
@@ -338,6 +357,7 @@ with tab1:
         annotation_text="Überverkauft",
     )
 
+    # Layout-Anpassungen im TradingView Dark-Design
     fig.update_layout(
         template="plotly_dark",
         xaxis_title="Datum / Uhrzeit",
@@ -354,29 +374,47 @@ with tab1:
         tickformat="%d.%m.%Y\n%H:%M",
         gridcolor="#2a2e39",
     )
+    fig.update_xaxes(gridcolor="#2a2e39", row=2, col=1)
     fig.update_yaxes(gridcolor="#2a2e39")
 
     st.plotly_chart(fig, use_container_width=True)
 
-# ==========================================
-# TAB 2: EINSTELLUNGEN
-# ==========================================
+# ==============================================================================
+# TAB 2: MINI-KI & PARAMETER KONFIGURATION
+# ==============================================================================
+
 with tab2:
     st.subheader("🤖 RSI KI-Parameter anpassen")
+    st.write("Hier kannst du die Schwellenwerte und Einstellungen der Mini-KI verändern.")
 
     rsi_p = st.slider(
         "RSI Periode (Tage/Kerzen)",
         min_value=5,
         max_value=30,
         value=rsi_period,
+        help="Standardwert ist 14. Kleinere Werte reagieren schneller, höhere Werte sind träger."
+    )
+
+    ob_level = st.slider(
+        "Überkauft-Schwelle (Verkaufssignal)",
+        min_value=50,
+        max_value=90,
+        value=overbought_level,
+    )
+
+    os_level = st.slider(
+        "Überverkauft-Schwelle (Kaufsignal)",
+        min_value=10,
+        max_value=50,
+        value=oversold_level,
     )
 
     if st.button("Einstellungen speichern", type="primary"):
         neue_config = {
             "rsi_period": rsi_p,
-            "overbought": overbought_level,
-            "oversold": oversold_level,
+            "overbought": ob_level,
+            "oversold": os_level,
         }
         save_config(neue_config)
-        st.success("✅ RSI-Einstellungen erfolgreich gespeichert!")
+        st.success("✅ RSI-Einstellungen erfolgreich in config.json gespeichert!")
         st.rerun()
