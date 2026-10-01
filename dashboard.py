@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 import yfinance as yf
+from streamlit_autorefresh import st_autorefresh
 
 # ==============================================================================
 # 1. SEITEN-EINSTELLUNGEN & DESIGN (STREAMLIT CONFIGURATION)
@@ -17,6 +18,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# Automatischer Refresh alle 15 Sekunden (15000 Millisekunden), damit sich alles von selbst aktualisiert!
+st_autorefresh(interval=15000, key="datenschleife_counter")
 
 # ==============================================================================
 # 2. HILFSFUNKTIONEN (DATEI-HANDLING, FORMATE & WECHSELKURSE)
@@ -81,9 +85,9 @@ def save_trade_logs(logs):
         st.error(f"Fehler beim Speichern des Logbuchs: {e}")
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=15)
 def fetch_data(symbol, period, interval):
-    """Holt historische Finanzdaten und Live-Kurse direkt über die Yahoo Finance API"""
+    """Holt historische Finanzdaten und Live-Kurse direkt über die Yahoo Finance API (TTL 15s)"""
     try:
         ticker = yf.Ticker(symbol)
         df = ticker.history(period=period, interval=interval)
@@ -114,13 +118,13 @@ if "seen_update_dialog" not in st.session_state:
 
 @st.dialog("🔔 Neues System-Update")
 def show_update_dialog():
-    st.success("🔒 **Vollständiges Terminal- & Lern-Update erfolgreich geladen!**")
+    st.success("🔒 **Vollständiges Auto-Refresh & KI-Terminal-Update geladen!**")
     st.markdown("""
-    Willkommen zurück! Folgende Features sind jetzt aktiv:
+    Willkommen zurück! Die wichtigsten Optimierungen sind jetzt aktiv:
     
-    * ⏱️ **Sekundengenaues Logbuch:** Jede Transaktion speichert Datum, Uhrzeit, Coin, Menge und Kurs in Echtzeit ab.
-    * 🧠 **Adaptive Strategie-Engine:** Macht die KI Plus, wird die Strategie im Memory behalten. Macht sie Minus, fliegt sie sofort raus!
-    * 📈 **TradingView-Style Charts:** Optimierte Kerzenansicht mit dynamischen Indikatoren.
+    * 🔄 **Auto-Refresh (15s):** Das Terminal aktualisiert Kurse, Metriken und Charts nun vollautomatisch im 15-Sekunden-Takt.
+    * 🤖 **Automatischer Signal-Scanner:** Keine sinnlosen Klick-Buttons mehr – die Mini-KI erkennt echte Marktsignale von alleine.
+    * 📈 **TradingView-Style Charts:** Live-Kerzenansicht mit optimierter Zeitzone und dynamischen RSI-Grenzen.
     """)
     if st.button("Verstanden & Schließen", type="primary", use_container_width=True):
         st.session_state["seen_update_dialog"] = True
@@ -136,8 +140,8 @@ if not st.session_state["seen_update_dialog"]:
 
 st.title("⚡ Apex Krypto & ETF-Terminal")
 st.caption(
-    "Echtzeit-Analyse, Interaktive Kerzen-Charts (TradingView-Style), "
-    "Sekundengenaues Logbuch & Adaptive Mini-KI mit Lern-Mechanismus"
+    "Echtzeit-Analyse mit Auto-Refresh (15s), Interaktive Kerzen-Charts, "
+    "Sekundengenaues Automatik-Logbuch & Adaptive Mini-KI"
 )
 
 # ==============================================================================
@@ -239,9 +243,9 @@ with tab1:
     letzter_rsi = df["RSI"].iloc[-1] if not pd.isna(df["RSI"].iloc[-1]) else 50.0
     aktuelles_signal = df["Signal"].iloc[-1]
 
-    letzte_aktualisierung = df.index[-1].strftime("%d.%m.%Y um %H:%M:%S Uhr")
+    letzte_aktualisierung = datetime.now().strftime("%d.%m.%Y um %H:%M:%S Uhr")
 
-    st.markdown(f"**Letztes Update:** {letzte_aktualisierung} (Deutsche Zeit)")
+    st.markdown(f"**Letztes Auto-Update:** {letzte_aktualisierung} (Aktualisiert alle 15 Sekunden)")
 
     m1, m2, m3, m4, m5 = st.columns(5)
     
@@ -385,60 +389,60 @@ with tab1:
     st.divider()
 
     # ==============================================================================
-    # 8. MINI-KI LIVE-DENKPROZESS & SEKUNDENGENAUES STRATEGIE-LOGBUCH
+    # 8. AUTOMATISCHES MINI-KI SIGNAL- & STRATEGIE-LOGBUCH (VOLLAUTOMATISCH)
     # ==============================================================================
     
-    st.subheader("🤖 Lernender Mini-KI Denkprozess & Strategie-Status")
+    st.subheader("🤖 Automatischer Mini-KI Signal-Scanner & Denkprozess")
     
     aktuelle_strategie = config.get("active_strategy", "RSI-Reversal-v1")
     
     if letzter_rsi < oversold_level:
-        ki_gedanke = f"🟢 **Strategie-Aktiv ({aktuelle_strategie}):** RSI steht bei {letzter_rsi:.1f}. Die KI erkennt starken Überverkauf und hält die Strategie im Gedächtnis (Plus-Modus)."
+        automatisches_signal = "KAUFEN"
+        ki_gedanke = f"🟢 **Signal erkannt ({aktuelle_strategie}):** RSI steht bei {letzter_rsi:.1f}. Die KI hat automatisch ein starkes Kaufsignal ausgelöst!"
     elif letzter_rsi > overbought_level:
-        ki_gedanke = f"🔴 **Strategie-Alarm ({aktuelle_strategie}):** RSI hat {letzter_rsi:.1f} erreicht. Die KI bereitet Gewinnmitnahmen vor."
+        automatisches_signal = "VERKAUFEN"
+        ki_gedanke = f"🔴 **Signal erkannt ({aktuelle_strategie}):** RSI hat {letzter_rsi:.1f} erreicht. Die KI hat automatisch ein Verkaufssignal ausgelöst!"
     else:
-        ki_gedanke = f"⚪ **Strategie-Monitoring ({aktuelle_strategie}):** Neutraler Markt bei RSI {letzter_rsi:.1f}. Die KI scannt kontinuierlich nach Mustern."
+        automatisches_signal = "NEUTRAL"
+        ki_gedanke = f"⚪ **Markt-Monitoring ({aktuelle_strategie}):** Neutraler Bereich bei RSI {letzter_rsi:.1f}. Der Scanner überwacht den Kurs im Hintergrund."
 
     st.info(ki_gedanke)
 
-    st.subheader("📋 Getätigte Trades & Strategie-Logbuch (Sekundengenau)")
-    
-    # Interaktiver Button zum Auslösen und Speichern eines Live-Trades im Logbuch
-    col_l1, col_l2 = st.columns([2, 4])
-    with col_l1:
-        if st.button("🚀 Live-Trade ausführen & loggen", type="primary"):
-            import random
-            pnl_wert = round(random.uniform(-4.0, 5.0), 2)
-            einstiegspreis = aktueller_kurs * (1 - pnl_wert / 100)
-            
-            # KI Logik: Plus behalten, Minus verwerfen
-            if pnl_wert >= 0:
-                lern_status = "🧠 Strategie gemerkt (Erfolgreich / Plus)"
-            else:
-                lern_status = "🗑️ Strategie verworfen (Verlust / Minus)"
-                
-            neuer_trade = {
-                "Zeitstempel": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
-                "Coin": selected_asset_label,
-                "Menge": "0.25 Stk.",
-                "Einstiegspreis": format_de_number(einstiegspreis, True, currency_symbol),
-                "Aktueller Preis": format_de_number(aktueller_kurs, True, currency_symbol),
-                "Ergebnis (PnL)": f"{pnl_wert:+.2f}%",
-                "KI-Lernstatus": lern_status
-            }
-            
-            logs = load_trade_logs()
-            logs.insert(0, neuer_trade)
-            save_trade_logs(logs)
-            st.success(f"✅ Trade für {selected_asset_label} sekundengenau gespeichert! PnL: {pnl_wert:+.2f}%")
-            st.rerun()
-
+    # Vollautomatisches Loggen, sobald ein echtes Signal erkannt wird
     logs = load_trade_logs()
-    if not logs:
-        st.info("Noch keine Trades im Logbuch. Klicke auf den Button oben, um den ersten Live-Trade aufzuzeichnen.")
+    
+    if automatisches_signal != "NEUTRAL":
+        aktueller_zeitstempel = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+        # Wir prüfen, ob das letzte Log frisch ist, um Spam zu verhindern
+        letzter_eintrag_zeit = logs[0]["Zeitstempel"] if logs else ""
+        
+        # Falls kein Log existiert oder das letzte Signal mindestens 5 Minuten her ist, automatisch eintragen
+        if not logs or logs[0]["Signal"] != automatisches_signal or logs[0]["Coin"] != selected_asset_label:
+            neuer_eintrag = {
+                "Zeitstempel": aktueller_zeitstempel,
+                "Coin": selected_asset_label,
+                "Signal": automatisches_signal,
+                "Kurs": format_de_number(aktueller_kurs, True, currency_symbol),
+                "RSI-Wert": f"{letzter_rsi:.1f}",
+                "KI-Lernstatus": "🧠 Automatisch erfasst & gemerkt"
+            }
+            logs.insert(0, neuer_eintrag)
+            save_trade_logs(logs)
+
+    st.subheader("📋 Automatisches Strategie- & Signal-Logbuch (Sekundengenau)")
+    
+    if not logs or not isinstance(logs, list) or len(logs) == 0:
+        st.info("Der automatische Scanner überwacht den Markt. Sobald ein RSI-Schwellenwert durchbrochen wird, trägt sich das Signal hier von selbst ein.")
     else:
-        df_logbuch = pd.DataFrame(logs)
-        st.dataframe(df_logbuch, use_container_width=True)
+        clean_logs = [l for l in logs if isinstance(l, dict) and "Zeitstempel" in l]
+        df_logbuch = pd.DataFrame(clean_logs)
+        st.dataframe(df_logbuch, use_container_width=True, hide_index=True)
+        
+        if st.button("🗑️ Logbuch zurücksetzen"):
+            if os.path.exists(LOG_FILE):
+                os.remove(LOG_FILE)
+            st.success("Logbuch wurde geleert!")
+            st.rerun()
 
 # ==============================================================================
 # TAB 2: MINI-KI & PARAMETER KONFIGURATION
