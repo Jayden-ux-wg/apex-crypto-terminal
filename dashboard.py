@@ -1,352 +1,333 @@
-from datetime import datetime, timedelta
 import json
 import os
-import plotly.graph_objects as go
+from datetime import datetime
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 import yfinance as yf
 
-# 1. SEITEN-EINSTELLUNGEN
+# ==========================================
+# 1. SEITEN-EINSTELLUNGEN & DESIGN
+# ==========================================
 st.set_page_config(
-    page_title="Apex Crypto Terminal", page_icon="⚡", layout="wide"
+    page_title="Apex Crypto Terminal",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-st.title("Apex Krypto & ETF-Terminal")
+st.title("⚡ Apex Krypto & ETF-Terminal")
 st.caption(
-    "Echtzeit-Analyse, Interaktive Kerzen-Charts (TradingView-Style),"
-    " Automatisches Logbuch & Adaptive Mini-KI mit P&L-Tracker"
+    "Echtzeit-Analyse, Interaktive Kerzen-Charts (TradingView-Style), "
+    "Automatisches Logbuch & Adaptive Mini-KI mit P&L-Tracker"
 )
 
-# Speicherpfade direkt im Skript-Ordner
-basis_pfad = os.path.dirname(os.path.abspath(__file__))
-desktop_pfad = os.path.join(basis_pfad, "bot_trades.csv")
-config_pfad = os.path.join(basis_pfad, "rsi_config.json")
-
-# Liste der Assets und deren Langnamen
-coins = ["BTC-USD", "ETH-USD", "SOL-USD", "AVAX-USD", "IBIT"]
-coin_namen = {
-    "BTC-USD": "BTC-USD (Bitcoin)",
-    "ETH-USD": "ETH-USD (Ethereum)",
-    "SOL-USD": "SOL-USD (Solana)",
-    "AVAX-USD": "AVAX-USD (Avalanche)",
-    "IBIT": "IBIT (iShares Bitcoin Trust)",
-}
-
-# Standard-Zielwerte als Fallback
-standard_ziele = {
-    "BTC-USD": 60,
-    "ETH-USD": 69,
-    "SOL-USD": 70,
-    "AVAX-USD": 60,
-    "IBIT": 60,
-}
+# ==========================================
+# 2. HILFSFUNKTIONEN (FORMATE & DATEIEN)
+# ==========================================
 
 
-def lade_config():
-  if os.path.exists(config_pfad):
-    try:
-      with open(config_pfad, "r") as f:
-        return json.load(f)
-    except Exception:
-      pass
-  return standard_ziele.copy()
+def format_de_number(val, is_currency=True, currency_symbol="€"):
+    """Formatiert Zahlen ins deutsche Format (z.B. 1.234,56 €)"""
+    if pd.isna(val) or val is None:
+        return "N/A"
+    formatted = f"{val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"{formatted} {currency_symbol}" if is_currency else formatted
 
 
-def speichere_config(ziele):
-  try:
-    with open(config_pfad, "w") as f:
-      json.dump(ziele, f, indent=4)
-  except Exception:
-    pass
-
-
-@st.cache_data(ttl=1800)
-def hole_historische_daten(ticker):
-  try:
-    df = yf.Ticker(ticker).history(period="1mo", interval="1h")
-    if df.empty or len(df) < 5:
-      df = yf.Ticker(ticker).history(period="5d", interval="1h")
-    return df
-  except Exception:
-    return pd.DataFrame()
-
-
-@st.cache_data(ttl=12)
-def hole_chart_daten(ticker):
-  try:
-    df = yf.Ticker(ticker).history(period="1d", interval="5m")
-    if not df.empty and all(
-        col in df.columns for col in ["Open", "High", "Low", "Close"]
-    ):
-      return df
-  except Exception:
-    pass
-  return pd.DataFrame()
-
-
-def berechne_rsi(data, window=14):
-  delta = data["Close"].diff()
-  gain = delta.where(delta > 0, 0).rolling(window=window).mean()
-  loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-  rs = gain / loss
-  return 100 - (100 / (1 + rs))
-
-
-def mini_ki_optimiere_wert(data, ticker):
-  kandidaten = [55, 60, 65, 70, 75]
-  best_rsi = standard_ziele.get(ticker, 70)
-  beste_trefferquote = -1
-
-  if len(data) < 20:
-    return best_rsi
-
-  for rsi_limit in kandidaten:
-    gewinne = 0
-    gesamte_signale = 0
-
-    for i in range(15, len(data) - 2):
-      preis = data["Close"].iloc[i]
-      sma = data["SMA20"].iloc[i]
-      rsi = data["RSI"].iloc[i]
-
-      if pd.isna(sma) or pd.isna(rsi):
-        continue
-
-      if preis > sma and rsi < rsi_limit:
-        gesamte_signale += 1
-        if data["Close"].iloc[i + 2] > preis:
-          gewinne += 1
-
-    if gesamte_signale > 0:
-      trefferquote = gewinne / gesamte_signale
-      if trefferquote > beste_trefferquote:
-        beste_trefferquote = trefferquote
-        best_rsi = rsi_limit
-
-  return best_rsi
-
-
-def log_trade_wenn_neu(coin, preis, rsi):
-  jetzt = datetime.now()
-  zeit_str = jetzt.strftime("%Y-%m-%d %H:%M:%S")
-  anzeige_name = coin_namen.get(coin, coin)
-
-  if os.path.exists(desktop_pfad):
-    try:
-      df = pd.read_csv(desktop_pfad)
-      if (
-          not df.empty
-          and "Coin" in df.columns
-          and "Zeitstempel" in df.columns
-      ):
-        coin_trades = df[df["Coin"] == anzeige_name]
-        if not coin_trades.empty:
-          letzte_zeit = datetime.strptime(
-              coin_trades["Zeitstempel"].iloc[-1], "%Y-%m-%d %H:%M:%S"
-          )
-          if jetzt - letzte_zeit < timedelta(hours=1):
-            return
-    except Exception:
-      pass
-
-  neuer_eintrag = pd.DataFrame([{
-      "Zeitstempel": zeit_str,
-      "Coin": anzeige_name,
-      "Einstiegspreis": round(preis, 2),
-      "RSI": round(rsi, 1),
-      "Aktueller Preis": round(preis, 2),
-      "P&L (%)": 0.0,
-      "Status": "Offen",
-  }])
-
-  if not os.path.exists(desktop_pfad):
-    neuer_eintrag.to_csv(desktop_pfad, index=False)
-  else:
-    neuer_eintrag.to_csv(desktop_pfad, mode="a", header=False, index=False)
-
-
-def aktualisiere_pnl_tracker():
-  if os.path.exists(desktop_pfad):
-    try:
-      df = pd.read_csv(desktop_pfad)
-      if df.empty:
-        return
-
-      if "Aktueller Preis" not in df.columns:
-        df["Aktueller Preis"] = df["Einstiegspreis"]
-      if "P&L (%)" not in df.columns:
-        df["P&L (%)"] = 0.0
-
-      rev_coin_namen = {v: k for k, v in coin_namen.items()}
-
-      geaendert = False
-      for idx, row in df.iterrows():
-        if row["Status"] == "Offen":
-          coin_anzeige = row["Coin"]
-          coin = rev_coin_namen.get(coin_anzeige, coin_anzeige)
-          entry = row["Einstiegspreis"]
-          try:
-            curr_df = yf.Ticker(coin).history(period="1d", interval="1m")
-            if not curr_df.empty:
-              curr_price = curr_df["Close"].iloc[-1]
-              pnl = ((curr_price - entry) / entry) * 100
-
-              df.at[idx, "Aktueller Preis"] = round(curr_price, 2)
-              df.at[idx, "P&L (%)"] = round(pnl, 2)
-              geaendert = True
-
-              if pnl >= 1.5:
-                df.at[idx, "Status"] = "Gewinn (TP +1.5%)"
-              elif pnl <= -1.0:
-                df.at[idx, "Status"] = "Verlust (SL -1%)"
-          except Exception:
+def load_config():
+    if os.path.exists("rsi_config.json"):
+        try:
+            with open("rsi_config.json", "r") as f:
+                return json.load(f)
+        except Exception:
             pass
+    return {
+        "rsi_period": 14,
+        "overbought": 70,
+        "oversold": 30,
+        "krypto_hebel": 1.0,
+    }
 
-      if geaendert:
-        df.to_csv(desktop_pfad, index=False)
+
+def save_config(config):
+    with open("rsi_config.json", "w") as f:
+        json.dump(config, f, indent=4)
+
+
+def load_trades():
+    if os.path.exists("bot_trades.csv"):
+        try:
+            return pd.read_csv("bot_trades.csv")
+        except Exception:
+            pass
+    return pd.DataFrame(
+        columns=[
+            "Datum",
+            "Asset",
+            "Typ",
+            "Kaufpreis",
+            "Verkaufspreis",
+            "Menge",
+            "Gewinn_Verlust",
+        ]
+    )
+
+
+def save_trades(df):
+    df.to_csv("bot_trades.csv", index=False)
+
+
+# ==========================================
+# 3. SIDEBAR / STEUERUNG
+# ==========================================
+st.sidebar.header("⚙️ Einstellungen")
+
+# Asset-Auswahl mit deutscher Beschriftung
+ASSET_MAP = {
+    "Bitcoin (BTC)": "BTC-USD",
+    "Ethereum (ETH)": "ETH-USD",
+    "Solana (SOL)": "SOL-USD",
+    "Avalanche (AVAX)": "AVAX-USD",
+    "iShares Bitcoin ETF (IBIT)": "IBIT",
+}
+
+selected_asset_label = st.sidebar.selectbox(
+    "Wähle ein Asset aus:", list(ASSET_MAP.keys())
+)
+ticker_symbol = ASSET_MAP[selected_asset_label]
+
+# Währungsauswahl (€ oder $)
+currency_choice = st.sidebar.radio(
+    "Anzeigewährung:", ["EUR (€)", "USD ($)"], index=0
+)
+currency_symbol = "€" if "EUR" in currency_choice else "$"
+
+# Zeiträume auf Deutsch
+ZEITRAUM_MAP = {
+    "1 Tag": ("1d", "5m"),
+    "5 Tage": ("5d", "15m"),
+    "1 Monat": ("1mo", "1h"),
+    "6 Monate": ("6mo", "1d"),
+    "1 Jahr": ("1y", "1d"),
+    "Maximal": ("max", "1wk"),
+}
+
+selected_zeitraum_label = st.sidebar.select_slider(
+    "Zeitraum wählen:", options=list(ZEITRAUM_MAP.keys()), value="1 Monat"
+)
+period, interval = ZEITRAUM_MAP[selected_zeitraum_label]
+
+# ==========================================
+# 4. DATEN HOLEN & UMRECHNEN
+# ==========================================
+
+
+@st.cache_data(ttl=60)
+def fetch_data(symbol, p, i):
+    data = yf.download(symbol, period=p, interval=i, progress=False)
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+    return data
+
+
+@st.cache_data(ttl=300)
+def get_usd_eur_rate():
+    try:
+        eur_data = yf.Ticker("EURUSD=X").history(period="1d")
+        return eur_data["Close"].iloc[-1]
     except Exception:
-      pass
+        return 0.92  # Fallback Wechselkurs USD zu EUR
 
 
-@st.fragment(run_every=12)
-def lade_live_dashboard():
-  st.subheader("Markt-Lage & Adaptive Mini-KI (12-Sekunden Takt)")
+df = fetch_data(ticker_symbol, period, interval)
 
-  aktualisiere_pnl_tracker()
+if df.empty:
+    st.error("❌ Keine Daten gefunden. Bitte versuche es später erneut.")
+    st.stop()
 
-  aktuelle_ziele = lade_config()
-  results = []
-  charts_data = {}
-  config_hat_sich_geändert = False
-  fehler_ticker = []
+# Falls EUR gewählt ist, rechnen wir die USD-Kurse live um
+usd_eur_rate = get_usd_eur_rate()
+if currency_symbol == "€":
+    for col in ["Open", "High", "Low", "Close"]:
+        if col in df.columns:
+            df[col] = df[col] * usd_eur_rate
 
-  for ticker in coins:
-    data_logik = hole_historische_daten(ticker)
+# Deutsche Zeitstempel erzwingen (Europe/Berlin)
+df.index = pd.to_datetime(df.index)
+if df.index.tz is None:
+    df.index = df.index.tz_localize("UTC").tz_convert("Europe/Berlin")
+else:
+    df.index = df.index.tz_convert("Europe/Berlin")
 
-    if data_logik.empty or "Close" not in data_logik.columns:
-      fehler_ticker.append(ticker)
-      continue
+# ==========================================
+# 5. KENNZAHLEN / METRIKEN
+# ==========================================
+aktueller_kurs = df["Close"].iloc[-1]
+erster_kurs = df["Close"].iloc[0]
+kurs_aenderung = aktueller_kurs - erster_kurs
+prozent_aenderung = (kurs_aenderung / erster_kurs) * 100
 
-    data_logik["SMA20"] = data_logik["Close"].rolling(window=20).mean()
-    data_logik["RSI"] = berechne_rsi(data_logik)
+hoch_kurs = df["High"].max()
+tief_kurs = df["Low"].min()
+letzte_aktualisierung = df.index[-1].strftime("%d.%m.%Y um %H:%M Uhr")
 
-    gelernter_rsi = mini_ki_optimiere_wert(data_logik, ticker)
+st.markdown(f"**Letztes Update:** {letzte_aktualisierung} (Deutsche Zeit)")
 
-    if aktuelle_ziele.get(ticker) != gelernter_rsi:
-      aktuelle_ziele[ticker] = gelernter_rsi
-      config_hat_sich_geändert = True
+m1, m2, m3, m4 = st.columns(4)
+m1.metric(
+    label=f"Aktueller Kurs ({selected_asset_label.split(' ')[0]})",
+    value=format_de_number(aktueller_kurs, True, currency_symbol),
+    delta=f"{prozent_aenderung:+.2f}%",
+)
+m2.metric(
+    label="Höchstkurs (Periode)",
+    value=format_de_number(hoch_kurs, True, currency_symbol),
+)
+m3.metric(
+    label="Tiefstkurs (Periode)",
+    value=format_de_number(tief_kurs, True, currency_symbol),
+)
+m4.metric(
+    label="Gesamtveränderung",
+    value=format_de_number(kurs_aenderung, True, currency_symbol),
+)
 
-    optimaler_rsi = aktuelle_ziele[ticker]
+st.divider()
 
-    letzter_preis = data_logik["Close"].iloc[-1]
-    letzter_sma = (
-        data_logik["SMA20"].iloc[-1]
-        if not pd.isna(data_logik["SMA20"].iloc[-1])
-        else letzter_preis
+# ==========================================
+# 6. INTERAKTIVES CHART (TRADINGVIEW-STYLE DEUTSCH)
+# ==========================================
+st.subheader(
+    f"📈 Kerzen-Chart: {selected_asset_label} ({selected_zeitraum_label})"
+)
+
+fig = go.Figure()
+
+fig.add_trace(
+    go.Candlestick(
+        x=df.index,
+        open=df["Open"],
+        high=df["High"],
+        low=df["Low"],
+        close=df["Close"],
+        name="Kursverlauf",
+        increasing_line_color="#00c853",
+        decreasing_line_color="#ff3d00",
+        text=[
+            f"Datum: {d.strftime('%d.%m.%Y %H:%M')}<br>"
+            f"Eröffnung: {o:,.2f} {currency_symbol}<br>"
+            f"Hoch: {h:,.2f} {currency_symbol}<br>"
+            f"Tief: {l:,.2f} {currency_symbol}<br>"
+            f"Schluss: {c:,.2f} {currency_symbol}"
+            for d, o, h, l, c in zip(
+                df.index, df["Open"], df["High"], df["Low"], df["Close"]
+            )
+        ],
+        hoverinfo="text",
     )
-    letzter_rsi = (
-        data_logik["RSI"].iloc[-1]
-        if not pd.isna(data_logik["RSI"].iloc[-1])
-        else 50.0
-    )
+)
 
-    if letzter_preis > letzter_sma and letzter_rsi < optimaler_rsi:
-      status = "Kaufsignal (KI-Optimiert)"
-      log_trade_wenn_neu(ticker, letzter_preis, letzter_rsi)
-    elif letzter_preis > letzter_sma and letzter_rsi >= optimaler_rsi:
-      status = f"Überkauft (RSI >= {optimaler_rsi})"
+fig.update_layout(
+    template="plotly_dark",
+    xaxis_title="Datum / Uhrzeit",
+    yaxis_title=f"Preis ({currency_symbol})",
+    xaxis_rangeslider_visible=False,
+    height=550,
+    margin=dict(l=20, r=20, t=30, b=20),
+)
+
+fig.update_xaxes(
+    tickformat="%d.%m.%Y\n%H:%M",
+    gridcolor="#2a2e39",
+)
+fig.update_yaxes(gridcolor="#2a2e39")
+
+st.plotly_chart(fig, use_container_width=True)
+
+# ==========================================
+# 7. TRADING BOT / P&L TRACKER & CONFIG
+# ==========================================
+st.divider()
+tab1, tab2 = st.tabs(
+    ["📊 Bot-Logbuch & P&L Tracker", "⚙️ RSI-Indikator & KI-Einstellungen"]
+)
+
+with tab1:
+    st.subheader("📋 Getätigte Trades & Performance")
+    trades_df = load_trades()
+
+    if not trades_df.empty:
+        st.dataframe(trades_df, use_container_width=True)
     else:
-      status = "Abwärtstrend"
+        st.info("Noch keine Trades im Logbuch vorhanden.")
 
-    results.append({
-        "Coin": coin_namen.get(ticker, ticker),
-        "Preis ($)": f"${letzter_preis:.2f}",
-        "SMA20 ($)": f"${letzter_sma:.2f}",
-        "RSI": f"{letzter_rsi:.1f}",
-        "KI-Zielwert": f"RSI < {optimaler_rsi}",
-        "Status": status,
-    })
+    st.markdown("---")
+    st.subheader("➕ Neuen Trade manuell eintragen")
+    with st.form("trade_form"):
+        col_a, col_b, col_c = st.columns(3)
+        trade_asset = col_a.selectbox("Asset", list(ASSET_MAP.keys()))
+        trade_typ = col_b.selectbox("Typ", ["Kauf (Long)", "Verkauf (Short)"])
+        trade_menge = col_c.number_input(
+            "Menge", min_value=0.0001, value=1.0, step=0.01
+        )
 
-    charts_data[ticker] = hole_chart_daten(ticker)
+        col_d, col_e = st.columns(2)
+        kaufpreis = col_d.number_input(
+            f"Kaufpreis ({currency_symbol})", min_value=0.0, value=0.0
+        )
+        verkaufspreis = col_e.number_input(
+            f"Verkaufspreis ({currency_symbol})", min_value=0.0, value=0.0
+        )
 
-  if config_hat_sich_geändert:
-    speichere_config(aktuelle_ziele)
+        submit = st.form_submit_button("Trade Speichern")
+        if submit:
+            pnl = (verkaufspreis - kaufpreis) * trade_menge
+            neuer_trade = {
+                "Datum": datetime.now().strftime("%d.%m.%Y %H:%M"),
+                "Asset": trade_asset.split(" ")[0],
+                "Typ": trade_typ,
+                "Kaufpreis": f"{kaufpreis:.2f} {currency_symbol}",
+                "Verkaufspreis": f"{verkaufspreis:.2f} {currency_symbol}",
+                "Menge": trade_menge,
+                "Gewinn_Verlust": f"{pnl:+.2f} {currency_symbol}",
+            }
+            trades_df = pd.concat(
+                [trades_df, pd.DataFrame([neuer_trade])], ignore_index=True
+            )
+            save_trades(trades_df)
+            st.success("✅ Trade erfolgreich gespeichert!")
+            st.rerun()
 
-  if fehler_ticker:
-    st.warning(
-        "Hinweis: Für folgende Assets konnten aktuell keine Yahoo-Daten"
-        f" geladen werden: {', '.join(fehler_ticker)}"
+with tab2:
+    st.subheader("🤖 RSI KI-Parameter anpassen")
+    config = load_config()
+
+    rsi_p = st.slider(
+        "RSI Periode (Tage/Kerzen)",
+        min_value=5,
+        max_value=30,
+        value=config.get("rsi_period", 14),
+    )
+    oversold_val = st.slider(
+        "Überverkauft Signal (Kaufsignal)",
+        min_value=10,
+        max_value=40,
+        value=config.get("oversold", 30),
+    )
+    overbought_val = st.slider(
+        "Überkauft Signal (Verkaufsignal)",
+        min_value=60,
+        max_value=90,
+        value=config.get("overbought", 70),
     )
 
-  if results:
-    cols = st.columns(min(len(results), 5))
-    for i, item in enumerate(results):
-      if i < len(cols):
-        cols[i].metric(
-            label=item["Coin"],
-            value=item["Preis ($)"],
-            delta=item["KI-Zielwert"],
-        )
-
-    st.dataframe(pd.DataFrame(results), use_container_width=True)
-  else:
-    st.error("Keine Marktdaten verfügbar.")
-
-  st.divider()
-
-  st.subheader("Interaktive Live-Charts (Kerzen-Ansicht im 12-Sekunden-Takt)")
-  st.caption("Echtzeit-Kerzencharts im Stil von professionellen Krypto-Terminals.")
-
-  tab_namen = [coin_namen.get(t, t) for t in coins]
-  tabs = st.tabs(tab_namen)
-
-  for i, tab in enumerate(tabs):
-    with tab:
-      ticker = coins[i]
-      df_chart = charts_data.get(ticker, pd.DataFrame())
-
-      if not df_chart.empty:
-        fig = go.Figure(
-            data=[
-                go.Candlestick(
-                    x=df_chart.index,
-                    open=df_chart["Open"],
-                    high=df_chart["High"],
-                    low=df_chart["Low"],
-                    close=df_chart["Close"],
-                    increasing_line_color="#26a69a",
-                    decreasing_line_color="#ef5350",
-                )
-            ]
-        )
-
-        fig.update_layout(
-            template="plotly_dark",
-            xaxis_rangeslider_visible=False,
-            margin=dict(l=10, r=10, t=10, b=10),
-            height=450,
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-      else:
-        st.warning(f"Keine Chart-Daten für {ticker} verfügbar.")
-
-  st.divider()
-
-  st.subheader("Automatisches Trade-Logbuch & P&L Tracker")
-  if os.path.exists(desktop_pfad):
-    df_trades = pd.read_csv(desktop_pfad)
-    st.dataframe(df_trades, use_container_width=True)
-  else:
-    st.info("Noch keine Trades in 'bot_trades.csv' gefunden.")
-
-  st.divider()
-
-  st.subheader("Mini-KI Gedächtnis Direkt im Dashboard Anzeigen")
-  aktuelle_config = lade_config()
-  st.json(aktuelle_config)
-
-
-lade_live_dashboard()
+    if st.button("Speichere Einstellungen"):
+        neue_config = {
+            "rsi_period": rsi_p,
+            "overbought": overbought_val,
+            "oversold": oversold_val,
+            "krypto_hebel": 1.0,
+        }
+        save_config(neue_config)
+        st.success("✅ RSI-Einstellungen erfolgreich gespeichert!")
