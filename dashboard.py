@@ -342,19 +342,21 @@ for i in range(len(df)):
     rsi_val = df["RSI"].iloc[i]
     base_sig = "NEUTRAL"
     if not pd.isna(rsi_val):
-        if rsi_val < oversold_level:
+        # Lockerere Bedingungen für Kauf/Verkauf
+        if rsi_val < oversold_level or (rsi_val < 48 and df["Close"].iloc[i] > df["Open"].iloc[i]):
             base_sig = "KAUFEN"
-        elif rsi_val > overbought_level:
+        elif rsi_val > overbought_level or (rsi_val > 52 and df["Close"].iloc[i] < df["Open"].iloc[i]):
             base_sig = "VERKAUFEN"
     df.iloc[i, df.columns.get_loc("Signal")] = base_sig
 
 letzter_rsi = df["RSI"].iloc[-1] if not pd.isna(df["RSI"].iloc[-1]) else 50.0
 aktuelles_signal = df["Signal"].iloc[-1]
 
-if candle_result["signal"] == "KAUFEN" and letzter_rsi < oversold_level + 10:
-    final_signal = "STARKES KAUFEN"
-elif candle_result["signal"] == "VERKAUFEN" and letzter_rsi > overbought_level - 10:
-    final_signal = "STARKES VERKAUFEN"
+# Flexiblere Verknüpfung für das finale Signal ganz oben
+if candle_result["signal"] == "KAUFEN" or letzter_rsi < 45:
+    final_signal = "STARKES KAUFEN" if candle_result["signal"] == "KAUFEN" else "KAUFEN"
+elif candle_result["signal"] == "VERKAUFEN" or letzter_rsi > 55:
+    final_signal = "STARKES VERKAUFEN" if candle_result["signal"] == "VERKAUFEN" else "VERKAUFEN"
 else:
     final_signal = aktuelles_signal
 
