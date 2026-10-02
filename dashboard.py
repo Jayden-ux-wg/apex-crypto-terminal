@@ -1,5 +1,3 @@
-Hier ist dein kompletter, aktualisierter Streamlit-Code. Die 10 Candlestick-Muster von Grok wurden nahtlos integriert, die Logik prüft nun zusätzlich zu deinem RSI auch die Kerzenmuster und im Chart werden dir ab sofort **erkannte Candlestick-Muster** (als Text/Hover) sowie **Kombinations-Signale** angezeigt. Der restliche Code und dein Design blieben dabei vollständig erhalten.
-
 ```python
 import json
 import os
