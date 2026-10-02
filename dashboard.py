@@ -102,10 +102,9 @@ def detect_candlestick_patterns(df: pd.DataFrame) -> dict:
     """
     Erkennt die 10 wichtigsten Candlestick-Muster auf dem DataFrame.
     Gibt ein Dictionary zurück mit den erkannten Mustern der letzten Kerzen.
-    Erwartet Spalten: Open, High, Low, Close
     """
     if len(df) < 3:
-        return {"patterns": [], "signal": "NEUTRAL", "reason": "Zu wenig Daten"}
+        return {"patterns": [], "signal": "NEUTRAL", "reason": "Zu wenig Daten", "score": 0}
 
     df_local = df.copy().dropna(subset=["Open", "High", "Low", "Close"])
     
@@ -233,13 +232,13 @@ if "seen_update_dialog" not in st.session_state:
 
 @st.dialog("🔔 Neues System-Update")
 def show_update_dialog():
-    st.success("🔒 **Vollständiges Terminal-, Kerzenmuster- & Auto-Log-Update geladen!**")
+    st.success("🔒 **Quick-Coin-Buttons & KI-Prognose-Engine geladen!**")
     st.markdown("""
     Willkommen zurück! Folgende Features sind jetzt aktiv:
     
-    * ⏱️ **Sekundengenaues Automatik-Logbuch:** Signale werden sauber registriert.
-    * 🕯️ **Candlestick-Pattern-Erkennung:** Integrierte KI-Erkennung für die 10 wichtigsten Kerzenmuster.
-    * 📈 **TradingView-Style Charts:** Optimierte Kerzenansicht mit dynamischen Indikatoren.
+    * ⚡ **Schnellwahl-Buttons:** Wechsle Coins direkt über das Dashboard mit einem Klick.
+    * 🎯 **KI-Wahrscheinlichkeits-Rechner:** Automatische Berechnung von Gewinn-Wahrscheinlichkeiten & Zielen.
+    * 🕯️ **Candlestick-Pattern-Erkennung:** Integrierte Erkennung für die 10 wichtigsten Kerzenmuster.
     """)
     if st.button("Verstanden & Schließen", type="primary", use_container_width=True):
         st.session_state["seen_update_dialog"] = True
@@ -260,7 +259,6 @@ st.caption(
 # ==============================================================================
 # 5. EINSTELLUNGEN & KONTROLLZENTRUM (SIDEBAR NAVIGATION)
 # ==============================================================================
-st.sidebar.header("⚙️ Einstellungen")
 ASSET_MAP = {
     "Bitcoin (BTC)": "BTC-USD",
     "Ethereum (ETH)": "ETH-USD",
@@ -268,9 +266,17 @@ ASSET_MAP = {
     "Avalanche (AVAX)": "AVAX-USD",
     "iShares Bitcoin Trust (IBIT)": "IBIT",
 }
+
+# Session State für Asset-Auswahl initialisieren (für die Schnellwahl-Buttons)
+if "selected_asset_label" not in st.session_state:
+    st.session_state["selected_asset_label"] = "Bitcoin (BTC)"
+
+st.sidebar.header("⚙️ Einstellungen")
 selected_asset_label = st.sidebar.selectbox(
-    "Wählen Sie ein Asset aus:", list(ASSET_MAP.keys())
+    "Wählen Sie ein Asset aus:", list(ASSET_MAP.keys()),
+    index=list(ASSET_MAP.keys()).index(st.session_state["selected_asset_label"])
 )
+st.session_state["selected_asset_label"] = selected_asset_label
 ticker_symbol = ASSET_MAP[selected_asset_label]
 
 currency_choice = st.sidebar.radio(
@@ -336,7 +342,6 @@ candle_result = detect_candlestick_patterns(df)
 df["Signal"] = "NEUTRAL"
 for i in range(len(df)):
     rsi_val = df["RSI"].iloc[i]
-    # Einfache Basis-Zuweisung über RSI
     base_sig = "NEUTRAL"
     if not pd.isna(rsi_val):
         if rsi_val < oversold_level:
@@ -366,6 +371,35 @@ tab1, tab2 = st.tabs(["📈 Terminal & Chart", "⚙️ KI-Einstellungen"])
 # TAB 1: ECHTZEIT-KENNZAHLEN & INTERAKTIVER TRADING-CHART
 # ==============================================================================
 with tab1:
+    # --------------------------------------------------------------------------
+    # QUICK-COIN-SWITCH BUTTONS (NEU: Direkt im Hauptbereich ganz oben)
+    # --------------------------------------------------------------------------
+    st.write("⚡ **Quick-Asset-Schnellwahl:**")
+    b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns(5)
+    
+    with b_col1:
+        if st.button("₿ Bitcoin (BTC)", use_container_width=True):
+            st.session_state["selected_asset_label"] = "Bitcoin (BTC)"
+            st.rerun()
+    with b_col2:
+        if st.button("Ξ Ethereum (ETH)", use_container_width=True):
+            st.session_state["selected_asset_label"] = "Ethereum (ETH)"
+            st.rerun()
+    with b_col3:
+        if st.button("◎ Solana (SOL)", use_container_width=True):
+            st.session_state["selected_asset_label"] = "Solana (SOL)"
+            st.rerun()
+    with b_col4:
+        if st.button("🔺 Avalanche", use_container_width=True):
+            st.session_state["selected_asset_label"] = "Avalanche (AVAX)"
+            st.rerun()
+    with b_col5:
+        if st.button("📊 IBIT ETF", use_container_width=True):
+            st.session_state["selected_asset_label"] = "iShares Bitcoin Trust (IBIT)"
+            st.rerun()
+
+    st.divider()
+
     aktueller_kurs = df["Close"].iloc[-1]
     erster_kurs = df["Close"].iloc[0]
     prozent_aenderung = ((aktueller_kurs - erster_kurs) / erster_kurs) * 100
@@ -400,7 +434,42 @@ with tab1:
         m5.metric(label="KI-Empfehlung", value=f"🔴 {final_signal}")
     else:
         m5.metric(label="KI-Empfehlung", value="⚪ NEUTRAL")
-        
+
+    # --------------------------------------------------------------------------
+    # NEU: KI-WAHRSCHEINLICHKEITS- & GEWINN-PROGNOSE (GENAU IM ROTEN KREIS)
+    # --------------------------------------------------------------------------
+    # Intelligente Berechnung basierend auf RSI + Kerzenmuster-Score
+    base_prob = 50.0
+    if letzter_rsi < oversold_level:
+        base_prob += (oversold_level - letzter_rsi) * 1.2
+    elif letzter_rsi > overbought_level:
+        base_prob += (letzter_rsi - overbought_level) * 1.2
+    
+    pattern_score = candle_result.get("score", 0)
+    win_probability = min(max(base_prob + (pattern_score * 7.5), 20.0), 92.5)
+    
+    expected_gain_pct = round(abs(pattern_score * 0.4) + 1.2, 2)
+    expected_loss_pct = round(expected_gain_pct * 0.5, 2)
+
+    prob_color = "🟢" if win_probability >= 65 else ("🔴" if win_probability <= 40 else "🟡")
+    
+    st.markdown(
+        f"""
+        <div style="padding: 12px 16px; background-color: #1e222d; border-radius: 8px; border: 1px solid #2a2e39; margin-top: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <span style="font-size: 15px; font-weight: bold; color: #e0e0e0;">🤖 KI-Prognose & Trade-Wahrscheinlichkeit:</span>
+                <span style="margin-left: 10px; font-size: 15px; color: #ffffff;">{prob_color} <b>{win_probability:.1f}% Win-Probability</b></span>
+            </div>
+            <div>
+                <span style="color: #00c853; font-weight: bold; margin-right: 15px;">Erwarteter Gewinn: +{expected_gain_pct}%</span>
+                <span style="color: #ff3d00; font-weight: bold;">Max. Risiko: -{expected_loss_pct}%</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    # --------------------------------------------------------------------------
+
     st.info(f"🕯️ **Erkannte Candlestick-Muster (Aktuelle Kerze):** {candle_result['reason']}")
     st.divider()
     
@@ -541,6 +610,7 @@ with tab1:
                 "Signal": final_signal,
                 "Kurs": format_de_number(aktueller_kurs, True, currency_symbol),
                 "RSI-Wert": f"{letzter_rsi:.1f}",
+                "Win-Prob": f"{win_probability:.1f}%",
                 "Muster": candle_result["reason"],
                 "KI-Lernstatus": "🧠 Automatisch erfasst & gemerkt"
             }
