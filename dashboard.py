@@ -230,14 +230,14 @@ def detect_candlestick_patterns(df: pd.DataFrame) -> dict:
 if "seen_update_dialog" not in st.session_state:
     st.session_state["seen_update_dialog"] = False
 
-@st.dialog("🔔 System-Update: Dynamische Risiko-Engine")
+@st.dialog("🔔 System-Update: Investitions-Simulator & Dynamik")
 def show_update_dialog():
-    st.success("🔒 **Dynamische Gewinn- & Risiko-Berechnung aktiv!**")
+    st.success("🔒 **Investitions-Simulation (1.000 € / 10.000 €) integriert!**")
     st.markdown("""
-    Wir haben das Feedback direkt umgesetzt:
+    Dein Feedback wurde direkt verbaut:
     
-    * 📈 **Volatilitäts-basierter Erwartungswert:** Erwarteter Gewinn und Risiko passen sich nun individuell an jedes Asset (z.B. Solana vs. Bitcoin) an.
-    * ⚡ **Quick-Asset-Schnellwahl** und **Kerzenmuster** laufen reibungslos.
+    * 💰 **Echtgeld-Simulation:** In der KI-Prognose-Leiste siehst du jetzt direkt, was der erwartete Gewinn und das Risiko bei **1.000 €** und **10.000 €** Einsatz ausmachen.
+    * 📈 **Dynamische Volatilität:** Die prozentualen Werte passen sich nun individuell an das jeweilige Asset und den gewählten Zeitraum an.
     """)
     if st.button("Verstanden & Schließen", type="primary", use_container_width=True):
         st.session_state["seen_update_dialog"] = True
@@ -269,7 +269,7 @@ ASSET_MAP = {
 if "selected_asset_label" not in st.session_state:
     st.session_state["selected_asset_label"] = "Bitcoin (BTC)"
 
-st.sidebar.header("⚙️ Einstellungen")
+st.sidebar.header("⚙️️ Einstellungen")
 selected_asset_label = st.sidebar.selectbox(
     "Wählen Sie ein Asset aus:", list(ASSET_MAP.keys()),
     index=list(ASSET_MAP.keys()).index(st.session_state["selected_asset_label"])
@@ -430,7 +430,7 @@ with tab1:
         m5.metric(label="KI-Empfehlung", value="⚪ NEUTRAL")
 
     # --------------------------------------------------------------------------
-    # NEU: DYNAMISCHE KI-WAHRSCHEINLICHKEITS- & GEWINN-PROGNOSE (VOLATILITÄTS-BASIERT)
+    # NEU: DYNAMISCHE KI-WAHRSCHEINLICHKEITS- & GEWINN-PROGNOSE + INVESTITIONSSIMULATION
     # --------------------------------------------------------------------------
     base_prob = 50.0
     if letzter_rsi < oversold_level:
@@ -441,26 +441,45 @@ with tab1:
     pattern_score = candle_result.get("score", 0)
     win_probability = min(max(base_prob + (pattern_score * 7.5), 20.0), 92.5)
     
-    # NEU: Dynamische Berechnung anhand der tatsächlichen Schwankungsbreite (Volatilität) des Assets im Chart
+    # Echte, individuelle Asset-Volatilität (angepasst an den Zeitraum)
     asset_volatility = df["Close"].pct_change().std() * 100
     if pd.isna(asset_volatility) or asset_volatility == 0:
-        asset_volatility = 1.0  # Fallback
+        asset_volatility = 1.2
         
-    expected_gain_pct = round(max(0.5, (asset_volatility * 1.5) + abs(pattern_score * 0.3)), 2)
-    expected_loss_pct = round(max(0.3, expected_gain_pct * 0.55), 2)
+    # Dynamischer Multiplikator je nach timeframe (damit 1 Tag nicht zu flach ist)
+    timeframe_multiplier = 0.8 if period == "1d" else (1.2 if period == "5d" else 2.0)
+    
+    expected_gain_pct = round(max(0.8, (asset_volatility * timeframe_multiplier) + abs(pattern_score * 0.4)), 2)
+    expected_loss_pct = round(max(0.5, expected_gain_pct * 0.6), 2)
+
+    # Investitions-Simulation für 1.000 € und 10.000 €
+    gain_1k = 1000 * (expected_gain_pct / 100)
+    loss_1k = 1000 * (expected_loss_pct / 100)
+    gain_10k = 10000 * (expected_gain_pct / 100)
+    loss_10k = 10000 * (expected_loss_pct / 100)
 
     prob_color = "🟢" if win_probability >= 65 else ("🔴" if win_probability <= 40 else "🟡")
     
     st.markdown(
         f"""
-        <div style="padding: 12px 16px; background-color: #1e222d; border-radius: 8px; border: 1px solid #2a2e39; margin-top: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <span style="font-size: 15px; font-weight: bold; color: #e0e0e0;">🤖 KI-Prognose & Trade-Wahrscheinlichkeit:</span>
-                <span style="margin-left: 10px; font-size: 15px; color: #ffffff;">{prob_color} <b>{win_probability:.1f}% Win-Probability</b></span>
+        <div style="padding: 14px 18px; background-color: #1e222d; border-radius: 8px; border: 1px solid #2a2e39; margin-top: 10px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div>
+                    <span style="font-size: 15px; font-weight: bold; color: #e0e0e0;">🤖 KI-Prognose & Win-Probability:</span>
+                    <span style="margin-left: 10px; font-size: 15px; color: #ffffff;">{prob_color} <b>{win_probability:.1f}%</b></span>
+                </div>
+                <div>
+                    <span style="color: #00c853; font-weight: bold; margin-right: 15px;">Erwarteter Gewinn: +{expected_gain_pct}%</span>
+                    <span style="color: #ff3d00; font-weight: bold;">Max. Risiko: -{expected_loss_pct}%</span>
+                </div>
             </div>
-            <div>
-                <span style="color: #00c853; font-weight: bold; margin-right: 15px;">Erwarteter Gewinn: +{expected_gain_pct}%</span>
-                <span style="color: #ff3d00; font-weight: bold;">Max. Risiko: -{expected_loss_pct}%</span>
+            <hr style="border: 0; height: 1px; background: #2a2e39; margin: 8px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #b0b3b8;">
+                <div>💡 <b>Investitions-Simulation:</b></div>
+                <div>
+                    <span>Bei <b>1.000 €</b> Einsatz: <span style="color: #00c853;">+{gain_1k:.2f} €</span> / <span style="color: #ff3d00;">-{loss_1k:.2f} €</span></span>
+                    <span style="margin-left: 20px;">Bei <b>10.000 €</b> Einsatz: <span style="color: #00c853;">+{gain_10k:.2f} €</span> / <span style="color: #ff3d00;">-{loss_10k:.2f} €</span></span>
+                </div>
             </div>
         </div>
         """,
