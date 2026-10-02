@@ -230,15 +230,14 @@ def detect_candlestick_patterns(df: pd.DataFrame) -> dict:
 if "seen_update_dialog" not in st.session_state:
     st.session_state["seen_update_dialog"] = False
 
-@st.dialog("🔔 Neues System-Update")
+@st.dialog("🔔 System-Update: Dynamische Risiko-Engine")
 def show_update_dialog():
-    st.success("🔒 **Quick-Coin-Buttons & KI-Prognose-Engine geladen!**")
+    st.success("🔒 **Dynamische Gewinn- & Risiko-Berechnung aktiv!**")
     st.markdown("""
-    Willkommen zurück! Folgende Features sind jetzt aktiv:
+    Wir haben das Feedback direkt umgesetzt:
     
-    * ⚡ **Schnellwahl-Buttons:** Wechsle Coins direkt über das Dashboard mit einem Klick.
-    * 🎯 **KI-Wahrscheinlichkeits-Rechner:** Automatische Berechnung von Gewinn-Wahrscheinlichkeiten & Zielen.
-    * 🕯️ **Candlestick-Pattern-Erkennung:** Integrierte Erkennung für die 10 wichtigsten Kerzenmuster.
+    * 📈 **Volatilitäts-basierter Erwartungswert:** Erwarteter Gewinn und Risiko passen sich nun individuell an jedes Asset (z.B. Solana vs. Bitcoin) an.
+    * ⚡ **Quick-Asset-Schnellwahl** und **Kerzenmuster** laufen reibungslos.
     """)
     if st.button("Verstanden & Schließen", type="primary", use_container_width=True):
         st.session_state["seen_update_dialog"] = True
@@ -267,7 +266,6 @@ ASSET_MAP = {
     "iShares Bitcoin Trust (IBIT)": "IBIT",
 }
 
-# Session State für Asset-Auswahl initialisieren (für die Schnellwahl-Buttons)
 if "selected_asset_label" not in st.session_state:
     st.session_state["selected_asset_label"] = "Bitcoin (BTC)"
 
@@ -350,11 +348,9 @@ for i in range(len(df)):
             base_sig = "VERKAUFEN"
     df.iloc[i, df.columns.get_loc("Signal")] = base_sig
 
-# Letztes Kombi-Signal für die Anzeige
 letzter_rsi = df["RSI"].iloc[-1] if not pd.isna(df["RSI"].iloc[-1]) else 50.0
 aktuelles_signal = df["Signal"].iloc[-1]
 
-# Verfeinerung mit Kerzenmuster-Ergebnis für das finale Live-Signal
 if candle_result["signal"] == "KAUFEN" and letzter_rsi < oversold_level + 10:
     final_signal = "STARKES KAUFEN"
 elif candle_result["signal"] == "VERKAUFEN" and letzter_rsi > overbought_level - 10:
@@ -371,9 +367,7 @@ tab1, tab2 = st.tabs(["📈 Terminal & Chart", "⚙️ KI-Einstellungen"])
 # TAB 1: ECHTZEIT-KENNZAHLEN & INTERAKTIVER TRADING-CHART
 # ==============================================================================
 with tab1:
-    # --------------------------------------------------------------------------
-    # QUICK-COIN-SWITCH BUTTONS (NEU: Direkt im Hauptbereich ganz oben)
-    # --------------------------------------------------------------------------
+    # Quick-Coin-Switch Buttons
     st.write("⚡ **Quick-Asset-Schnellwahl:**")
     b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns(5)
     
@@ -436,9 +430,8 @@ with tab1:
         m5.metric(label="KI-Empfehlung", value="⚪ NEUTRAL")
 
     # --------------------------------------------------------------------------
-    # NEU: KI-WAHRSCHEINLICHKEITS- & GEWINN-PROGNOSE (GENAU IM ROTEN KREIS)
+    # NEU: DYNAMISCHE KI-WAHRSCHEINLICHKEITS- & GEWINN-PROGNOSE (VOLATILITÄTS-BASIERT)
     # --------------------------------------------------------------------------
-    # Intelligente Berechnung basierend auf RSI + Kerzenmuster-Score
     base_prob = 50.0
     if letzter_rsi < oversold_level:
         base_prob += (oversold_level - letzter_rsi) * 1.2
@@ -448,8 +441,13 @@ with tab1:
     pattern_score = candle_result.get("score", 0)
     win_probability = min(max(base_prob + (pattern_score * 7.5), 20.0), 92.5)
     
-    expected_gain_pct = round(abs(pattern_score * 0.4) + 1.2, 2)
-    expected_loss_pct = round(expected_gain_pct * 0.5, 2)
+    # NEU: Dynamische Berechnung anhand der tatsächlichen Schwankungsbreite (Volatilität) des Assets im Chart
+    asset_volatility = df["Close"].pct_change().std() * 100
+    if pd.isna(asset_volatility) or asset_volatility == 0:
+        asset_volatility = 1.0  # Fallback
+        
+    expected_gain_pct = round(max(0.5, (asset_volatility * 1.5) + abs(pattern_score * 0.3)), 2)
+    expected_loss_pct = round(max(0.3, expected_gain_pct * 0.55), 2)
 
     prob_color = "🟢" if win_probability >= 65 else ("🔴" if win_probability <= 40 else "🟡")
     
