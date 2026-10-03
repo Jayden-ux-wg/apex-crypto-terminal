@@ -12,13 +12,12 @@ import yfinance as yf
 # 1. SEITEN-EINSTELLUNGEN & DESIGN (STREAMLIT CONFIGURATION)
 # ==============================================================================
 st.set_page_config(
-    page_title="Apex Krypto & ETF-Terminal",
+    page_title="Apex Gold & Multi-Asset Terminal",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# === HIER FÜGST DU DEN CSS-CODE EIN ===
 st.markdown("""
     <style>
     div[data-testid="stMetricValue"] {
@@ -27,7 +26,6 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-# ======================================
 
 # ==============================================================================
 # 2. HILFSFUNKTIONEN (DATEI-HANDLING, FORMATE & WECHSELKURSE)
@@ -110,10 +108,6 @@ def get_usd_eur_rate():
 # 2.1 CANDLESTICK-MUSTER ERKENNUNG (10 WICHTIGSTE MUSTER)
 # ==============================================================================
 def detect_candlestick_patterns(df: pd.DataFrame) -> dict:
-    """
-    Erkennt die 10 wichtigsten Candlestick-Muster auf dem DataFrame.
-    Gibt ein Dictionary zurück mit den erkannten Mustern der letzten Kerzen.
-    """
     if len(df) < 3:
         return {"patterns": [], "signal": "NEUTRAL", "reason": "Zu wenig Daten", "score": 0}
 
@@ -142,82 +136,50 @@ def detect_candlestick_patterns(df: pd.DataFrame) -> dict:
         patterns.append("Doji")
     
     # 2. HAMMER (bullisch)
-    if (lower_pct[-1] > 0.6 and 
-        upper_pct[-1] < 0.1 and 
-        body_pct[-1] < 0.3 and
-        c[-1] > o[-1]): 
+    if (lower_pct[-1] > 0.6 and upper_pct[-1] < 0.1 and body_pct[-1] < 0.3 and c[-1] > o[-1]): 
         patterns.append("Hammer")
         signal_score += 2
     
     # 3. INVERTED HAMMER (bullisch)
-    if (upper_pct[-1] > 0.6 and 
-        lower_pct[-1] < 0.1 and 
-        body_pct[-1] < 0.3 and
-        c[-1] > o[-1]):
+    if (upper_pct[-1] > 0.6 and lower_pct[-1] < 0.1 and body_pct[-1] < 0.3 and c[-1] > o[-1]):
         patterns.append("Inverted Hammer")
         signal_score += 1.5
     
     # 4. HANGING MAN (bearisch)
-    if (lower_pct[-1] > 0.6 and 
-        upper_pct[-1] < 0.1 and 
-        body_pct[-1] < 0.3 and
-        c[-1] < o[-1]): 
+    if (lower_pct[-1] > 0.6 and upper_pct[-1] < 0.1 and body_pct[-1] < 0.3 and c[-1] < o[-1]): 
         patterns.append("Hanging Man")
         signal_score -= 2
     
     # 5. SHOOTING STAR (bearisch)
-    if (upper_pct[-1] > 0.6 and 
-        lower_pct[-1] < 0.1 and 
-        body_pct[-1] < 0.3 and
-        c[-1] < o[-1]):
+    if (upper_pct[-1] > 0.6 and lower_pct[-1] < 0.1 and body_pct[-1] < 0.3 and c[-1] < o[-1]):
         patterns.append("Shooting Star")
         signal_score -= 2
     
     # 6. BULLISH ENGULFING
-    if (c[-2] < o[-2] and                    # vorherige Kerze rot
-        c[-1] > o[-1] and                    # aktuelle Kerze grün
-        o[-1] < c[-2] and                    # Open unter dem Close der vorherigen
-        c[-1] > o[-2]):                      # Close über dem Open der vorherigen
+    if (c[-2] < o[-2] and c[-1] > o[-1] and o[-1] < c[-2] and c[-1] > o[-2]): 
         patterns.append("Bullish Engulfing")
         signal_score += 3
     
     # 7. BEARISH ENGULFING
-    if (c[-2] > o[-2] and                    # vorherige Kerze grün
-        c[-1] < o[-1] and                    # aktuelle Kerze rot
-        o[-1] > c[-2] and                    # Open über dem Close der vorherigen
-        c[-1] < o[-2]):                      # Close unter dem Open der vorherigen
+    if (c[-2] > o[-2] and c[-1] < o[-1] and o[-1] > c[-2] and c[-1] < o[-2]): 
         patterns.append("Bearish Engulfing")
         signal_score -= 3
     
-    # 8. MORNING STAR (bullisch, 3 Kerzen)
-    if (c[-3] < o[-3] and                    # 1. Kerze rot
-        body_pct[-2] < 0.3 and               # 2. Kerze kleiner Body (Doji-ähnlich)
-        c[-1] > o[-1] and                    # 3. Kerze grün
-        c[-1] > (o[-3] + c[-3]) / 2):        # Close der 3. über der Mitte der 1.
+    # 8. MORNING STAR (bullisch)
+    if (c[-3] < o[-3] and body_pct[-2] < 0.3 and c[-1] > o[-1] and c[-1] > (o[-3] + c[-3]) / 2): 
         patterns.append("Morning Star")
         signal_score += 3
     
-    # 9. EVENING STAR (bearisch, 3 Kerzen)
-    if (c[-3] > o[-3] and                    # 1. Kerze grün
-        body_pct[-2] < 0.3 and               # 2. Kerze kleiner Body
-        c[-1] < o[-1] and                    # 3. Kerze rot
-        c[-1] < (o[-3] + c[-3]) / 2):        # Close der 3. unter der Mitte der 1.
+    # 9. EVENING STAR (bearisch)
+    if (c[-3] > o[-3] and body_pct[-2] < 0.3 and c[-1] < o[-1] and c[-1] < (o[-3] + c[-3]) / 2): 
         patterns.append("Evening Star")
         signal_score -= 3
     
     # 10. PIERCING LINE / DARK CLOUD COVER
-    if (c[-2] < o[-2] and                    # vorherige rot
-        c[-1] > o[-1] and                    # aktuelle grün
-        o[-1] < l[-2] and                    # Open unter dem Low der vorherigen
-        c[-1] > (o[-2] + c[-2]) / 2 and      # Close über der Mitte der vorherigen
-        c[-1] < o[-2]):                      # aber noch unter dem Open der vorherigen
+    if (c[-2] < o[-2] and c[-1] > o[-1] and o[-1] < l[-2] and c[-1] > (o[-2] + c[-2]) / 2 and c[-1] < o[-2]): 
         patterns.append("Piercing Line")
         signal_score += 2
-    elif (c[-2] > o[-2] and                  # vorherige grün
-          c[-1] < o[-1] and                  # aktuelle rot
-          o[-1] > h[-2] and                  # Open über dem High der vorherigen
-          c[-1] < (o[-2] + c[-2]) / 2 and    # Close unter der Mitte
-          c[-1] > o[-2]):                    # aber noch über dem Open der vorherigen
+    elif (c[-2] > o[-2] and c[-1] < o[-1] and o[-1] > h[-2] and c[-1] < (o[-2] + c[-2]) / 2 and c[-1] > o[-2]): 
         patterns.append("Dark Cloud Cover")
         signal_score -= 2
     
@@ -236,19 +198,20 @@ def detect_candlestick_patterns(df: pd.DataFrame) -> dict:
     }
 
 # ==============================================================================
-# 3. UPDATE POP-UP (DIALOG) FÜR FREUNDE & NUTZER
+# 3. UPDATE POP-UP (DIALOG)
 # ==============================================================================
 if "seen_update_dialog" not in st.session_state:
     st.session_state["seen_update_dialog"] = False
 
-@st.dialog("🔔 System-Update: Investitions-Simulator & Dynamik")
+@st.dialog("🔔 System-Update: Gold (XAU/USD) & Handels-Terminal")
 def show_update_dialog():
-    st.success("🔒 **Investitions-Simulation (1.000 € / 10.000 €) integriert!**")
+    st.success("🥇 **Gold (XAU/USD) erfolgreich als Fokus-Asset integriert!**")
     st.markdown("""
-    Dein Feedback wurde direkt verbaut:
+    Dein Terminal wurde erweitert:
     
-    * 💰 **Echtgeld-Simulation:** In der KI-Prognose-Leiste siehst du jetzt direkt, was der erwartete Gewinn und das Risiko bei **1.000 €** und **10.000 €** Einsatz ausmachen.
-    * 📈 **Dynamische Volatilität:** Die prozentualen Werte passen sich nun individuell an das jeweilige Asset und den gewählten Zeitraum an.
+    * 🥇 **Gold-Integration:** XAU/USD (GC=F) ist nun direkt als primärer Markt auswählbar.
+    * 💰 **Investitions-Simulation:** Live-Berechnung möglicher Chancen/Risiken für **1.000 €** und **10.000 €** Einsatz.
+    * 📈 **Dynamische Volatilität:** Exakte Anpassung der Prozentwerte an Gold- und Krypto-Kurse.
     """)
     if st.button("Verstanden & Schließen", type="primary", use_container_width=True):
         st.session_state["seen_update_dialog"] = True
@@ -258,18 +221,19 @@ if not st.session_state["seen_update_dialog"]:
     show_update_dialog()
 
 # ==============================================================================
-# 4. HEADER & TITELBEREICH DER DASHBOARD-OBERFLÄCHE
+# 4. HEADER & TITELBEREICH
 # ==============================================================================
-st.title("⚡ Apex Krypto & ETF-Terminal")
+st.title("⚡ Apex Trading & Signal-Terminal")
 st.caption(
-    "Echtzeit-Analyse, Interaktive Kerzen-Charts (TradingView-Style), "
-    "Sekundengenaues Logbuch & Candlestick-Erkennung"
+    "Echtzeit-Analyse für Gold (XAU/USD) & Krypto, Interaktive Charts, "
+    "Sekundengenaues Logbuch & Candlestick-Mustererkennung"
 )
 
 # ==============================================================================
 # 5. EINSTELLUNGEN & KONTROLLZENTRUM (SIDEBAR NAVIGATION)
 # ==============================================================================
 ASSET_MAP = {
+    "Gold (XAU/USD)": "GC=F",
     "Bitcoin (BTC)": "BTC-USD",
     "Ethereum (ETH)": "ETH-USD",
     "Solana (SOL)": "SOL-USD",
@@ -278,9 +242,9 @@ ASSET_MAP = {
 }
 
 if "selected_asset_label" not in st.session_state:
-    st.session_state["selected_asset_label"] = "Bitcoin (BTC)"
+    st.session_state["selected_asset_label"] = "Gold (XAU/USD)"
 
-st.sidebar.header("⚙️️ Einstellungen")
+st.sidebar.header("⚙ Einstellungen")
 selected_asset_label = st.sidebar.selectbox(
     "Wählen Sie ein Asset aus:", list(ASSET_MAP.keys()),
     index=list(ASSET_MAP.keys()).index(st.session_state["selected_asset_label"])
@@ -353,7 +317,6 @@ for i in range(len(df)):
     rsi_val = df["RSI"].iloc[i]
     base_sig = "NEUTRAL"
     if not pd.isna(rsi_val):
-        # Lockerere Bedingungen für Kauf/Verkauf
         if rsi_val < oversold_level or (rsi_val < 48 and df["Close"].iloc[i] > df["Open"].iloc[i]):
             base_sig = "KAUFEN"
         elif rsi_val > overbought_level or (rsi_val > 52 and df["Close"].iloc[i] < df["Open"].iloc[i]):
@@ -363,7 +326,6 @@ for i in range(len(df)):
 letzter_rsi = df["RSI"].iloc[-1] if not pd.isna(df["RSI"].iloc[-1]) else 50.0
 aktuelles_signal = df["Signal"].iloc[-1]
 
-# Flexiblere Verknüpfung für das finale Signal ganz oben
 if candle_result["signal"] == "KAUFEN" or letzter_rsi < 45:
     final_signal = "STARKES KAUFEN" if candle_result["signal"] == "KAUFEN" else "KAUFEN"
 elif candle_result["signal"] == "VERKAUFEN" or letzter_rsi > 55:
@@ -380,27 +342,30 @@ tab1, tab2 = st.tabs(["📈 Terminal & Chart", "⚙️ KI-Einstellungen"])
 # TAB 1: ECHTZEIT-KENNZAHLEN & INTERAKTIVER TRADING-CHART
 # ==============================================================================
 with tab1:
-    # Quick-Coin-Switch Buttons
     st.write("⚡ **Quick-Asset-Schnellwahl:**")
-    b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns(5)
+    b_col1, b_col2, b_col3, b_col4, b_col5, b_col6 = st.columns(6)
     
     with b_col1:
-        if st.button("₿ Bitcoin (BTC)", use_container_width=True):
-            st.session_state["selected_asset_label"] = "Bitcoin (BTC)"
+        if st.button("🥇 Gold (XAU)", use_container_width=True):
+            st.session_state["selected_asset_label"] = "Gold (XAU/USD)"
             st.rerun()
     with b_col2:
-        if st.button("Ξ Ethereum (ETH)", use_container_width=True):
-            st.session_state["selected_asset_label"] = "Ethereum (ETH)"
+        if st.button("₿ Bitcoin", use_container_width=True):
+            st.session_state["selected_asset_label"] = "Bitcoin (BTC)"
             st.rerun()
     with b_col3:
-        if st.button("◎ Solana (SOL)", use_container_width=True):
-            st.session_state["selected_asset_label"] = "Solana (SOL)"
+        if st.button("Ξ Ethereum", use_container_width=True):
+            st.session_state["selected_asset_label"] = "Ethereum (ETH)"
             st.rerun()
     with b_col4:
+        if st.button("◎ Solana", use_container_width=True):
+            st.session_state["selected_asset_label"] = "Solana (SOL)"
+            st.rerun()
+    with b_col5:
         if st.button("🔺 Avalanche", use_container_width=True):
             st.session_state["selected_asset_label"] = "Avalanche (AVAX)"
             st.rerun()
-    with b_col5:
+    with b_col6:
         if st.button("📊 IBIT ETF", use_container_width=True):
             st.session_state["selected_asset_label"] = "iShares Bitcoin Trust (IBIT)"
             st.rerun()
@@ -442,9 +407,7 @@ with tab1:
     else:
         m5.metric(label="KI-Empfehlung", value="⚪ NEUTRAL")
 
-    # --------------------------------------------------------------------------
-    # NEU: DYNAMISCHE KI-WAHRSCHEINLICHKEITS- & GEWINN-PROGNOSE + INVESTITIONSSIMULATION
-    # --------------------------------------------------------------------------
+    # KI-Wahrscheinlichkeits- & Gewinnprognose
     base_prob = 50.0
     if letzter_rsi < oversold_level:
         base_prob += (oversold_level - letzter_rsi) * 1.2
@@ -454,18 +417,15 @@ with tab1:
     pattern_score = candle_result.get("score", 0)
     win_probability = min(max(base_prob + (pattern_score * 7.5), 20.0), 92.5)
     
-    # Echte, individuelle Asset-Volatilität (angepasst an den Zeitraum)
     asset_volatility = df["Close"].pct_change().std() * 100
     if pd.isna(asset_volatility) or asset_volatility == 0:
         asset_volatility = 1.2
         
-    # Dynamischer Multiplikator je nach timeframe (damit 1 Tag nicht zu flach ist)
     timeframe_multiplier = 0.8 if period == "1d" else (1.2 if period == "5d" else 2.0)
     
     expected_gain_pct = round(max(0.8, (asset_volatility * timeframe_multiplier) + abs(pattern_score * 0.4)), 2)
     expected_loss_pct = round(max(0.5, expected_gain_pct * 0.6), 2)
 
-    # Investitions-Simulation für 1.000 € und 10.000 €
     gain_1k = 1000 * (expected_gain_pct / 100)
     loss_1k = 1000 * (expected_loss_pct / 100)
     gain_10k = 10000 * (expected_gain_pct / 100)
@@ -498,7 +458,6 @@ with tab1:
         """,
         unsafe_allow_html=True
     )
-    # --------------------------------------------------------------------------
 
     st.info(f"🕯️ **Erkannte Candlestick-Muster (Aktuelle Kerze):** {candle_result['reason']}")
     st.divider()
