@@ -18,6 +18,17 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# === HIER FÜGST DU DEN CSS-CODE EIN ===
+st.markdown("""
+    <style>
+    div[data-testid="stMetricValue"] {
+        font-size: 14px !important;
+        white-space: nowrap !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+# ======================================
+
 # ==============================================================================
 # 2. HILFSFUNKTIONEN (DATEI-HANDLING, FORMATE & WECHSELKURSE)
 # ==============================================================================
