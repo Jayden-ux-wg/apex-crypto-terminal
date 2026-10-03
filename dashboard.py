@@ -22,7 +22,7 @@ st.set_page_config(
 st.markdown("""
     <style>
     div[data-testid="stMetricValue"] {
-        font-size: 17px !important;
+        font-size: 20px !important;
         white-space: nowrap !important;
     }
     </style>
