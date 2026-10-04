@@ -1,12 +1,12 @@
-import time
 import os
+import time
 import pandas as pd
 import alpaca_trade_api as tradeapi
 
 # ==========================================
 # 1. KONFIGURATION & API-ZUGANG
 # ==========================================
-# Trage hier später deine echten Alpaca Paper-Keys ein
+# Trage hier deine echten Alpaca Paper-Keys ein (oder nutze Umgebungsvariablen)
 API_KEY = os.getenv("APACA_API_KEY", "DEIN_PAPER_API_KEY")
 SECRET_KEY = os.getenv("APACA_SECRET_KEY", "DEIN_PAPER_SECRET_KEY")
 BASE_URL = "https://paper-api.alpaca.markets"  # Wichtig: Paper-Trading Umgebung zum Testen
@@ -20,7 +20,6 @@ SIGNAL_FILE = "bot_trades.csv"
 def check_for_signals():
     """Überprüft die CSV-Datei des Dashboards auf neue Handelssignale."""
     if not os.path.exists(SIGNAL_FILE):
-        print(f"Signal-Datei '{SIGNAL_FILE}' wurde noch nicht gefunden. Warte auf das Dashboard...")
         return None
     
     try:
@@ -38,7 +37,7 @@ def check_for_signals():
 def execute_leveraged_trade(symbol="SPY", target_position_value_usd=10000.0):
     """
     Führt den Trade aus: Berechnet die Stückzahl für die 10.000 $ Position 
-    und setzt eine Bracket-Order mit -0,8% Stop-Loss.
+    und setzt eine Bracket-Order mit -0,8% Stop-Loss und +2,0% Take-Profit.
     """
     try:
         # Aktuellen Marktpreis abrufen
@@ -82,13 +81,33 @@ def execute_leveraged_trade(symbol="SPY", target_position_value_usd=10000.0):
         return None
 
 if __name__ == "__main__":
-    print("Trading-Bot-Skript gestartet. Warte auf Signale...")
+    print("🤖 Trading-Bot-Dauerschleife gestartet. Warte auf Signale in der CSV...")
     
-    # Beispielhafter Testlauf
-    signal = check_for_signals()
-    if signal is not None:
-        print(f"Signal erkannt: {signal}")
-        # Sobald die Keys da sind, kannst du hier die Ausführung aktivieren:
-        # execute_leveraged_trade('SPY', 10000)
-    else:
-        print("Derzeit liegt kein aktives Signal vor.")
+    # Speichert bereits verarbeitete Zeitstempel, damit Trades nicht doppelt ausgeführt werden
+    processed_timestamps = set()
+    
+    while True:
+        signal = check_for_signals()
+        if signal is not None:
+            # Werte aus der CSV auslesen (unterstützt die Spaltennamen timestamp, symbol, signal)
+            try:
+                timestamp = str(signal.get("timestamp", ""))
+                symbol = str(signal.get("symbol", "SPY"))
+                sig_type = str(signal.get("signal", "BUY"))
+            except Exception:
+                timestamp = str(signal)
+                symbol = "SPY"
+                sig_type = "BUY"
+
+            # Prüfen, ob dieses spezifische Signal bereits verarbeitet wurde
+            if timestamp and timestamp not in processed_timestamps:
+                print(f"\n📥 Neues Signal empfangen ({timestamp}): {symbol} -> {sig_type}")
+                
+                if sig_type == "BUY":
+                    execute_leveraged_trade(symbol=symbol, target_position_value_usd=10000.0)
+                
+                # Timestamp als "erledigt" markieren
+                processed_timestamps.add(timestamp)
+        
+        # Alle 5 Sekunden das nächste Update abwarten
+        time.sleep(5)
