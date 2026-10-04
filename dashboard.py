@@ -31,6 +31,7 @@ st.markdown("""
 # 2. HILFSFUNKTIONEN (DATEI-HANDLING, FORMATE & WECHSELKURSE)
 # ==============================================================================
 LOG_FILE = "trades_log.json"
+BOT_SIGNAL_FILE = "bot_trades.csv"
 
 def format_de_number(val, is_currency=True, currency_symbol="€"):
     """Formatiert Zahlen ins deutsche Format mit Punkte-Tausendertrennung (z.B. 1.234,56 €)"""
@@ -82,6 +83,20 @@ def save_trade_logs(logs):
             json.dump(logs, f, indent=4, ensure_ascii=False)
     except Exception as e:
         st.error(f"Fehler beim Speichern des Logbuchs: {e}")
+
+def log_trade_signal_to_csv(symbol, signal_type, price):
+    """Schreibt das Signal in die bot_trades.csv, damit der Trading-Bot es ausführen kann."""
+    new_signal = pd.DataFrame([{
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "symbol": symbol,
+        "signal": signal_type,
+        "price": price
+    }])
+    
+    if not os.path.exists(BOT_SIGNAL_FILE):
+        new_signal.to_csv(BOT_SIGNAL_FILE, index=False)
+    else:
+        new_signal.to_csv(BOT_SIGNAL_FILE, mode='a', header=False, index=False)
 
 @st.cache_data(ttl=15)
 def fetch_data(symbol, period, interval):
@@ -606,6 +621,12 @@ with tab1:
             logs.insert(0, neuer_eintrag)
             save_trade_logs(logs)
             
+            # 🚀 HIER WIRD DAS SIGNAL AUTOMATISCH AN DEN BOT (bot_trades.csv) ÜBERGEBEN:
+            if "KAUFEN" in final_signal:
+                log_trade_signal_to_csv(ticker_symbol, "BUY", aktueller_kurs)
+            elif "VERKAUFEN" in final_signal:
+                log_trade_signal_to_csv(ticker_symbol, "SELL", aktueller_kurs)
+            
     st.subheader("📋 Automatisches Strategie- & Signal-Logbuch (Sekundengenau)")
     
     if not logs or not isinstance(logs, list) or len(logs) == 0:
@@ -618,7 +639,9 @@ with tab1:
         if st.button("🗑️ Logbuch zurücksetzen"):
             if os.path.exists(LOG_FILE):
                 os.remove(LOG_FILE)
-            st.success("Logbuch wurde geleert!")
+            if os.path.exists(BOT_SIGNAL_FILE):
+                os.remove(BOT_SIGNAL_FILE)
+            st.success("Logbuch und Bot-Signale wurden geleert!")
             st.rerun()
 
 # ==============================================================================
