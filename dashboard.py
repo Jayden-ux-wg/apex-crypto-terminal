@@ -1,682 +1,296 @@
-import json
-import os
-from datetime import datetime
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import streamlit as st
-import yfinance as yf
+import asyncio
+import aiohttp
+import json
+import io
+import csv
+import random
+import re
+from urllib.parse import quote
+from datetime import datetime
 
-# ==============================================================================
-# 1. SEITEN-EINSTELLUNGEN & DESIGN (STREAMLIT CONFIGURATION)
-# ==============================================================================
+# --- STREAMLIT PAGE CONFIG ---
 st.set_page_config(
-    page_title="Apex Gold & Multi-Asset Terminal",
-    page_icon="⚡",
+    page_title="Stealth OSINT Engine v4.0 Ultra",
+    page_icon="👁️",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
+# --- DARK HACKER STYLING ---
 st.markdown("""
     <style>
-    div[data-testid="stMetricValue"] {
-        font-size: 30px !important;
-        white-space: nowrap !important;
-    }
+    .stApp { background-color: #080808; color: #00ff66; font-family: 'Courier New', Courier, monospace; }
+    h1, h2, h3 { color: #ff2a2a !important; font-family: 'Courier New', Courier, monospace; text-shadow: 0px 0px 8px rgba(255, 42, 42, 0.4); }
+    .stTextInput input { background-color: #121212; color: #00ff66; border: 1px solid #ff2a2a; font-family: 'Courier New', Courier, monospace; }
+    .stButton button { background: linear-gradient(45deg, #ff2a2a, #8b0000); color: white; font-weight: bold; border-radius: 4px; border: 1px solid #ff5555; width: 100%; padding: 0.6rem 1rem; }
+    .stButton button:hover { background: linear-gradient(45deg, #ff5555, #ff2a2a); color: #fff; border: 1px solid #00ff66; box-shadow: 0 0 10px rgba(0, 255, 102, 0.5); }
+    div[data-testid="stMetricValue"] { color: #00ff66 !important; font-family: 'Courier New', Courier, monospace; }
+    .profile-card { background-color: #121212; border: 1px solid #00ff66; padding: 15px; border-radius: 8px; margin-bottom: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
-# ==============================================================================
-# 2. HILFSFUNKTIONEN (DATEI-HANDLING, FORMATE & WECHSELKURSE)
-# ==============================================================================
-LOG_FILE = "trades_log.json"
-BOT_SIGNAL_FILE = "bot_trades.csv"
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+]
 
-def format_de_number(val, is_currency=True, currency_symbol="€"):
-    """Formatiert Zahlen ins deutsche Format mit Punkte-Tausendertrennung (z.B. 1.234,56 €)"""
-    if pd.isna(val) or val is None:
-        return "N/A"
-    formatted = f"{val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    if is_currency:
-        return f"{formatted} {currency_symbol}"
-    return formatted
-
-def load_config():
-    """Lädt die lokalen Einstellungen für Indikatoren und Strategien"""
-    if os.path.exists("config.json"):
-        try:
-            with open("config.json", "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {
-        "rsi_period": 14, 
-        "overbought": 70, 
-        "oversold": 30,
-        "active_strategy": "Standard RSI-Reversal v1",
-        "strategy_score": 100
+PLATFORMS_DB = {
+    "Social & Networks": {
+        "GitHub": "https://github.com/{}",
+        "X (Twitter)": "https://twitter.com/{}",
+        "Reddit": "https://www.reddit.com/user/{}",
+        "Instagram": "https://www.instagram.com/{}",
+        "TikTok": "https://www.tiktok.com/@{}",
+        "LinkedIn": "https://www.linkedin.com/in/{}",
+        "Telegram": "https://t.me/{}",
+        "Pinterest": "https://pinterest.com/{}",
+        "Mastodon": "https://mastodon.social/@{}",
+        "Medium": "https://medium.com/@{}",
+        "Linktree": "https://linktr.ee/{}"
+    },
+    "Gaming & Esports": {
+        "Steam": "https://steamcommunity.com/id/{}",
+        "Twitch": "https://www.twitch.tv/{}",
+        "Kick": "https://kick.com/{}",
+        "Chess.com": "https://www.chess.com/member/{}",
+        "Lichess": "https://lichess.org/@/{}",
+        "Speedrun.com": "https://www.speedrun.com/user/{}"
+    },
+    "Developer & Tech": {
+        "GitLab": "https://gitlab.com/{}",
+        "Bitbucket": "https://bitbucket.org/{}",
+        "Replit": "https://replit.com/@{}",
+        "Docker Hub": "https://hub.docker.com/u/{}",
+        "Npmjs": "https://www.npmjs.com/~{}",
+        "PyPI": "https://pypi.org/user/{}"
+    },
+    "Media & Creative": {
+        "Spotify": "https://open.spotify.com/user/{}",
+        "SoundCloud": "https://soundcloud.com/{}",
+        "YouTube": "https://www.youtube.com/@{}",
+        "DeviantArt": "https://www.deviantart.com/{}",
+        "Bandcamp": "https://bandcamp.com/{}"
     }
+}
 
-def save_config(config_data):
-    """Speichert die geänderten Indikator-Einstellungen lokal ab"""
-    try:
-        with open("config.json", "w", encoding="utf-8") as f:
-            json.dump(config_data, f, indent=4, ensure_ascii=False)
-    except Exception as e:
-        st.error(f"Fehler beim Speichern der Konfiguration: {e}")
-
-def load_trade_logs():
-    """Lädt das echte, sekundengenaue Trade-Logbuch aus der JSON-Datei"""
-    if os.path.exists(LOG_FILE):
-        try:
-            with open(LOG_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return []
-
-def save_trade_logs(logs):
-    """Speichert das Logbuch mit allen Trades und KI-Lernstatus ab"""
-    try:
-        with open(LOG_FILE, "w", encoding="utf-8") as f:
-            json.dump(logs, f, indent=4, ensure_ascii=False)
-    except Exception as e:
-        st.error(f"Fehler beim Speichern des Logbuchs: {e}")
-
-def log_trade_signal_to_csv(symbol, signal_type, price):
-    """Schreibt das Signal in die bot_trades.csv, damit der Trading-Bot es ausführen kann."""
-    new_signal = pd.DataFrame([{
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "symbol": symbol,
-        "signal": signal_type,
-        "price": price
-    }])
+# --- METADATEN SCRAPER (OpenGraph / HTML Meta Tags) ---
+def extract_metadata(html_text):
+    metadata = {"title": None, "description": None, "image": None}
     
-    if not os.path.exists(BOT_SIGNAL_FILE):
-        new_signal.to_csv(BOT_SIGNAL_FILE, index=False)
-    else:
-        new_signal.to_csv(BOT_SIGNAL_FILE, mode='a', header=False, index=False)
+    # Title extrahieren
+    title_match = re.search(r'<title>(.*?)</title>', html_text, re.IGNORECASE)
+    if title_match:
+        metadata["title"] = title_match.group(1).strip()
+        
+    # OpenGraph Description
+    desc_match = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']', html_text, re.IGNORECASE) or \
+                 re.search(r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']', html_text, re.IGNORECASE)
+    if desc_match:
+        metadata["description"] = desc_match.group(1).strip()
+        
+    # OpenGraph Image (Profilbild)
+    img_match = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\'](.*?)["\']', html_text, re.IGNORECASE)
+    if img_match:
+        metadata["image"] = img_match.group(1).strip()
+        
+    return metadata
 
-@st.cache_data(ttl=15)
-def fetch_data(symbol, period, interval):
-    """Holt historische Finanzdaten und Live-Kurse direkt über die Yahoo Finance API"""
+# --- ASYNC CHECKER MIT DEEP SCRAPING ---
+async def fetch_platform(session, name, category, url_template, query, timeout_sec):
+    target_url = url_template.format(query)
+    headers = {
+        "User-Agent": random.choice(USER_AGENTS),
+        "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+    }
+    
     try:
-        ticker = yf.Ticker(symbol)
-        df = ticker.history(period=period, interval=interval)
-        return df
-    except Exception as e:
-        st.error(f"Fehler beim Abrufen der Finanzdaten: {e}")
-        return pd.DataFrame()
-
-def get_usd_eur_rate():
-    """Holt den aktuellen Live-Wechselkurs von USD zu EUR für die automatische Umrechnung"""
-    try:
-        eur_data = yf.Ticker("EURUSD=X").history(period="1d")
-        if not eur_data.empty:
-            return eur_data["Close"].iloc[-1]
-        return 0.92
+        async with session.get(target_url, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout_sec), allow_redirects=True) as response:
+            status = response.status
+            
+            if status == 200:
+                text = await response.text()
+                page_text = text.lower()
+                
+                not_found_indicators = [
+                    "not found", "does not exist", "user not found", "account not found",
+                    "seite nicht gefunden", "konto existiert nicht", "error 404", "page not found"
+                ]
+                for indicator in not_found_indicators:
+                    if indicator in page_text:
+                        return {"name": name, "category": category, "url": target_url, "status": "NOT_FOUND"}
+                
+                # METADATEN EXTRAHIEREN (Deep OSINT)
+                meta = extract_metadata(text)
+                
+                return {
+                    "name": name, 
+                    "category": category, 
+                    "url": target_url, 
+                    "status": "FOUND",
+                    "metadata": meta
+                }
+                
+            elif status in [403, 429]:
+                return {"name": name, "category": category, "url": target_url, "status": "BLOCKED", "code": status}
+            elif status == 404:
+                return {"name": name, "category": category, "url": target_url, "status": "NOT_FOUND"}
+            else:
+                return {"name": name, "category": category, "url": target_url, "status": "ERROR", "code": status}
+                
+    except asyncio.TimeoutError:
+        return {"name": name, "category": category, "url": target_url, "status": "TIMEOUT"}
     except Exception:
-        return 0.92
+        return {"name": name, "category": category, "url": target_url, "status": "ERROR", "code": "Exception"}
 
-# ==============================================================================
-# 2.1 CANDLESTICK-MUSTER ERKENNUNG (10 WICHTIGSTE MUSTER)
-# ==============================================================================
-def detect_candlestick_patterns(df: pd.DataFrame) -> dict:
-    if len(df) < 3:
-        return {"patterns": [], "signal": "NEUTRAL", "reason": "Zu wenig Daten", "score": 0}
-
-    df_local = df.copy().dropna(subset=["Open", "High", "Low", "Close"])
-    
-    o = df_local["Open"].values
-    h = df_local["High"].values
-    l = df_local["Low"].values
-    c = df_local["Close"].values
-    
-    body = np.abs(c - o)
-    upper_shadow = h - np.maximum(o, c)
-    lower_shadow = np.minimum(o, c) - l
-    full_range = h - l
-    full_range = np.where(full_range == 0, 0.0001, full_range) 
-    
-    body_pct = body / full_range
-    upper_pct = upper_shadow / full_range
-    lower_pct = lower_shadow / full_range
-    
-    patterns = []
-    signal_score = 0 
-    
-    # 1. DOJI
-    if body_pct[-1] < 0.1:
-        patterns.append("Doji")
-    
-    # 2. HAMMER (bullisch)
-    if (lower_pct[-1] > 0.6 and upper_pct[-1] < 0.1 and body_pct[-1] < 0.3 and c[-1] > o[-1]): 
-        patterns.append("Hammer")
-        signal_score += 2
-    
-    # 3. INVERTED HAMMER (bullisch)
-    if (upper_pct[-1] > 0.6 and lower_pct[-1] < 0.1 and body_pct[-1] < 0.3 and c[-1] > o[-1]):
-        patterns.append("Inverted Hammer")
-        signal_score += 1.5
-    
-    # 4. HANGING MAN (bearisch)
-    if (lower_pct[-1] > 0.6 and upper_pct[-1] < 0.1 and body_pct[-1] < 0.3 and c[-1] < o[-1]): 
-        patterns.append("Hanging Man")
-        signal_score -= 2
-    
-    # 5. SHOOTING STAR (bearisch)
-    if (upper_pct[-1] > 0.6 and lower_pct[-1] < 0.1 and body_pct[-1] < 0.3 and c[-1] < o[-1]):
-        patterns.append("Shooting Star")
-        signal_score -= 2
-    
-    # 6. BULLISH ENGULFING
-    if (c[-2] < o[-2] and c[-1] > o[-1] and o[-1] < c[-2] and c[-1] > o[-2]): 
-        patterns.append("Bullish Engulfing")
-        signal_score += 3
-    
-    # 7. BEARISH ENGULFING
-    if (c[-2] > o[-2] and c[-1] < o[-1] and o[-1] > c[-2] and c[-1] < o[-2]): 
-        patterns.append("Bearish Engulfing")
-        signal_score -= 3
-    
-    # 8. MORNING STAR (bullisch)
-    if (c[-3] < o[-3] and body_pct[-2] < 0.3 and c[-1] > o[-1] and c[-1] > (o[-3] + c[-3]) / 2): 
-        patterns.append("Morning Star")
-        signal_score += 3
-    
-    # 9. EVENING STAR (bearisch)
-    if (c[-3] > o[-3] and body_pct[-2] < 0.3 and c[-1] < o[-1] and c[-1] < (o[-3] + c[-3]) / 2): 
-        patterns.append("Evening Star")
-        signal_score -= 3
-    
-    # 10. PIERCING LINE / DARK CLOUD COVER
-    if (c[-2] < o[-2] and c[-1] > o[-1] and o[-1] < l[-2] and c[-1] > (o[-2] + c[-2]) / 2 and c[-1] < o[-2]): 
-        patterns.append("Piercing Line")
-        signal_score += 2
-    elif (c[-2] > o[-2] and c[-1] < o[-1] and o[-1] > h[-2] and c[-1] < (o[-2] + c[-2]) / 2 and c[-1] > o[-2]): 
-        patterns.append("Dark Cloud Cover")
-        signal_score -= 2
-    
-    if signal_score >= 3:
-        signal = "KAUFEN"
-    elif signal_score <= -3:
-        signal = "VERKAUFEN"
-    else:
-        signal = "NEUTRAL"
-    
-    return {
-        "patterns": patterns,
-        "signal": signal,
-        "score": signal_score,
-        "reason": ", ".join(patterns) if patterns else "Kein klares Muster"
-    }
-
-# ==============================================================================
-# 3. UPDATE POP-UP (DIALOG)
-# ==============================================================================
-if "seen_update_dialog" not in st.session_state:
-    st.session_state["seen_update_dialog"] = False
-
-@st.dialog("🔔 System-Update: Gold (XAU/USD) & Handels-Terminal")
-def show_update_dialog():
-    st.success("🥇 **Gold (XAU/USD) erfolgreich als Fokus-Asset integriert!**")
-    st.markdown("""
-    Dein Terminal wurde erweitert:
-    
-    * 🥇 **Gold-Integration:** XAU/USD (GC=F) ist nun direkt als primärer Markt auswählbar.
-    * 💰 **Investitions-Simulation:** Live-Berechnung möglicher Chancen/Risiken für **1.000 €** und **10.000 €** Einsatz.
-    * 📈 **Dynamische Volatilität:** Exakte Anpassung der Prozentwerte an Gold- und Krypto-Kurse.
-    """)
-    if st.button("Verstanden & Schließen", type="primary", use_container_width=True):
-        st.session_state["seen_update_dialog"] = True
-        st.rerun()
-
-if not st.session_state["seen_update_dialog"]:
-    show_update_dialog()
-
-# ==============================================================================
-# 4. HEADER & TITELBEREICH
-# ==============================================================================
-st.title("⚡ Apex Trading & Signal-Terminal")
-st.caption(
-    "Echtzeit-Analyse für Gold (XAU/USD) & Krypto, Interaktive Charts, "
-    "Sekundengenaues Logbuch & Candlestick-Mustererkennung"
-)
-
-# ==============================================================================
-# 5. EINSTELLUNGEN & KONTROLLZENTRUM (SIDEBAR NAVIGATION)
-# ==============================================================================
-ASSET_MAP = {
-    "Gold (XAU/USD)": "GC=F",
-    "Bitcoin (BTC)": "BTC-USD",
-    "Ethereum (ETH)": "ETH-USD",
-    "Solana (SOL)": "SOL-USD",
-    "Avalanche (AVAX)": "AVAX-USD",
-    "iShares Bitcoin Trust (IBIT)": "IBIT",
-}
-
-if "selected_asset_label" not in st.session_state:
-    st.session_state["selected_asset_label"] = "Gold (XAU/USD)"
-
-st.sidebar.header("⚙ Einstellungen")
-selected_asset_label = st.sidebar.selectbox(
-    "Wählen Sie ein Asset aus:", list(ASSET_MAP.keys()),
-    index=list(ASSET_MAP.keys()).index(st.session_state["selected_asset_label"])
-)
-st.session_state["selected_asset_label"] = selected_asset_label
-ticker_symbol = ASSET_MAP[selected_asset_label]
-
-currency_choice = st.sidebar.radio(
-    "Anzeigewährung:", ["EUR (€)", "USD ($)"], index=0
-)
-currency_symbol = "€" if "EUR" in currency_choice else "$"
-
-ZEITRAUM_MAP = {
-    "1 Tag": ("1d", "5m"),
-    "5 Tage": ("5d", "15m"),
-    "1 Monat": ("1mo", "1h"),
-    "6 Monate": ("6mo", "1d"),
-    "1 Jahr": ("1y", "1d"),
-    "Maximal": ("max", "1wk"),
-}
-selected_zeitraum_label = st.sidebar.select_slider(
-    "Zeitraum wählen:", options=list(ZEITRAUM_MAP.keys()), value="1 Tag"
-)
-period, interval = ZEITRAUM_MAP[selected_zeitraum_label]
-
-st.sidebar.divider()
-
-if st.sidebar.button("🔄 Kursdaten jetzt aktualisieren", use_container_width=True):
-    st.cache_data.clear()
-    st.rerun()
-
-if st.sidebar.button("ℹ️ Update-Info anzeigen", use_container_width=True):
-    st.session_state["seen_update_dialog"] = False
-    st.rerun()
-
-# ==============================================================================
-# 6. DATENVERARBEITUNG, WÄHRUNGSUMRECHNUNG & SIGNAL-BERECHNUNG
-# ==============================================================================
-df = fetch_data(ticker_symbol, period, interval)
-if df.empty:
-    st.error("❌ Keine Marktdaten gefunden. Bitte versuche es später erneut oder wähle ein anderes Asset.")
-    st.stop()
-
-usd_eur_rate = get_usd_eur_rate()
-if currency_symbol == "€":
-    for col in ["Open", "High", "Low", "Close"]:
-        df[col] = df[col] * usd_eur_rate
-    df.index = df.index.tz_convert("Europe/Berlin")
-else:
-    df.index = df.index.tz_convert("Europe/Berlin")
-
-config = load_config()
-rsi_period = config.get("rsi_period", 14)
-overbought_level = config.get("overbought", 70)
-oversold_level = config.get("oversold", 30)
-
-# RSI Berechnung
-delta = df["Close"].diff()
-gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
-loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
-rs = gain / loss
-df["RSI"] = 100 - (100 / (1 + rs))
-
-# Candlestick-Analyse aufrufen
-candle_result = detect_candlestick_patterns(df)
-
-# Kombiniertes Signal (RSI + Candlestick Muster)
-df["Signal"] = "NEUTRAL"
-for i in range(len(df)):
-    rsi_val = df["RSI"].iloc[i]
-    base_sig = "NEUTRAL"
-    if not pd.isna(rsi_val):
-        if rsi_val < oversold_level or (rsi_val < 48 and df["Close"].iloc[i] > df["Open"].iloc[i]):
-            base_sig = "KAUFEN"
-        elif rsi_val > overbought_level or (rsi_val > 52 and df["Close"].iloc[i] < df["Open"].iloc[i]):
-            base_sig = "VERKAUFEN"
-    df.iloc[i, df.columns.get_loc("Signal")] = base_sig
-
-letzter_rsi = df["RSI"].iloc[-1] if not pd.isna(df["RSI"].iloc[-1]) else 50.0
-aktuelles_signal = df["Signal"].iloc[-1]
-
-if candle_result["signal"] == "KAUFEN" or letzter_rsi < 45:
-    final_signal = "STARKES KAUFEN" if candle_result["signal"] == "KAUFEN" else "KAUFEN"
-elif candle_result["signal"] == "VERKAUFEN" or letzter_rsi > 55:
-    final_signal = "STARKES VERKAUFEN" if candle_result["signal"] == "VERKAUFEN" else "VERKAUFEN"
-else:
-    final_signal = aktuelles_signal
-
-# ==============================================================================
-# 7. HAUPT-TABS STRUKTURIERUNG
-# ==============================================================================
-tab1, tab2 = st.tabs(["📈 Terminal & Chart", "⚙️ KI-Einstellungen"])
-
-# ==============================================================================
-# TAB 1: ECHTZEIT-KENNZAHLEN & INTERAKTIVER TRADING-CHART
-# ==============================================================================
-with tab1:
-    st.write("⚡ **Quick-Asset-Schnellwahl:**")
-    b_col1, b_col2, b_col3, b_col4, b_col5, b_col6 = st.columns(6)
-    
-    with b_col1:
-        if st.button("🥇 Gold (XAU)", use_container_width=True):
-            st.session_state["selected_asset_label"] = "Gold (XAU/USD)"
-            st.rerun()
-    with b_col2:
-        if st.button("₿ Bitcoin", use_container_width=True):
-            st.session_state["selected_asset_label"] = "Bitcoin (BTC)"
-            st.rerun()
-    with b_col3:
-        if st.button("Ξ Ethereum", use_container_width=True):
-            st.session_state["selected_asset_label"] = "Ethereum (ETH)"
-            st.rerun()
-    with b_col4:
-        if st.button("◎ Solana", use_container_width=True):
-            st.session_state["selected_asset_label"] = "Solana (SOL)"
-            st.rerun()
-    with b_col5:
-        if st.button("🔺 Avalanche", use_container_width=True):
-            st.session_state["selected_asset_label"] = "Avalanche (AVAX)"
-            st.rerun()
-    with b_col6:
-        if st.button("📊 IBIT ETF", use_container_width=True):
-            st.session_state["selected_asset_label"] = "iShares Bitcoin Trust (IBIT)"
-            st.rerun()
-
-    st.divider()
-
-    aktueller_kurs = df["Close"].iloc[-1]
-    erster_kurs = df["Close"].iloc[0]
-    prozent_aenderung = ((aktueller_kurs - erster_kurs) / erster_kurs) * 100
-    hoch_kurs = df["High"].max()
-    tief_kurs = df["Low"].min()
-    letzte_aktualisierung = datetime.now().strftime("%d.%m.%Y um %H:%M:%S Uhr")
-    
-    st.markdown(f"**Letztes Laden:** {letzte_aktualisierung} (Deutsche Zeit)")
-    m1, m2, m3, m4, m5 = st.columns(5)
-    
-    asset_kurzname = selected_asset_label.split(' ')[0]
-    m1.metric(
-        label=f"Aktueller Kurs ({asset_kurzname})",
-        value=format_de_number(aktueller_kurs, True, currency_symbol),
-        delta=f"{prozent_aenderung:+.2f}%",
-    )
-    m2.metric(
-        label="Höchstkurs",
-        value=format_de_number(hoch_kurs, True, currency_symbol),
-    )
-    m3.metric(
-        label="Tiefstkurs",
-        value=format_de_number(tief_kurs, True, currency_symbol),
-    )
-    m4.metric(
-        label="RSI Wert",
-        value=f"{letzter_rsi:.1f}",
-    )
-    if "KAUFEN" in final_signal:
-        m5.metric(label="KI-Empfehlung", value=f"🟢 {final_signal}")
-    elif "VERKAUFEN" in final_signal:
-        m5.metric(label="KI-Empfehlung", value=f"🔴 {final_signal}")
-    else:
-        m5.metric(label="KI-Empfehlung", value="⚪ NEUTRAL")
-
-    # KI-Wahrscheinlichkeits- & Gewinnprognose
-    base_prob = 50.0
-    if letzter_rsi < oversold_level:
-        base_prob += (oversold_level - letzter_rsi) * 1.2
-    elif letzter_rsi > overbought_level:
-        base_prob += (letzter_rsi - overbought_level) * 1.2
-    
-    pattern_score = candle_result.get("score", 0)
-    win_probability = min(max(base_prob + (pattern_score * 7.5), 20.0), 92.5)
-    
-    asset_volatility = df["Close"].pct_change().std() * 100
-    if pd.isna(asset_volatility) or asset_volatility == 0:
-        asset_volatility = 1.2
+# --- ENGINE LOGIK ---
+async def run_osint_scan(targets, query, max_concurrent, timeout_sec, progress_bar, status_text):
+    connector = aiohttp.TCPConnector(limit=max_concurrent)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        tasks = [
+            fetch_platform(session, name, cat, url, query, timeout_sec)
+            for name, cat, url in targets
+        ]
         
-    timeframe_multiplier = 0.8 if period == "1d" else (1.2 if period == "5d" else 2.0)
-    
-    expected_gain_pct = round(max(0.8, (asset_volatility * timeframe_multiplier) + abs(pattern_score * 0.4)), 2)
-    expected_loss_pct = round(max(0.5, expected_gain_pct * 0.6), 2)
-
-    gain_1k = 1000 * (expected_gain_pct / 100)
-    loss_1k = 1000 * (expected_loss_pct / 100)
-    gain_10k = 10000 * (expected_gain_pct / 100)
-    loss_10k = 10000 * (expected_loss_pct / 100)
-
-    prob_color = "🟢" if win_probability >= 65 else ("🔴" if win_probability <= 40 else "🟡")
-    
-    st.markdown(
-        f"""
-        <div style="padding: 14px 18px; background-color: #1e222d; border-radius: 8px; border: 1px solid #2a2e39; margin-top: 10px; margin-bottom: 10px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <div>
-                    <span style="font-size: 15px; font-weight: bold; color: #e0e0e0;">🤖 KI-Prognose & Win-Probability:</span>
-                    <span style="margin-left: 10px; font-size: 15px; color: #ffffff;">{prob_color} <b>{win_probability:.1f}%</b></span>
-                </div>
-                <div>
-                    <span style="color: #00c853; font-weight: bold; margin-right: 15px;">Erwarteter Gewinn: +{expected_gain_pct}%</span>
-                    <span style="color: #ff3d00; font-weight: bold;">Max. Risiko: -{expected_loss_pct}%</span>
-                </div>
-            </div>
-            <hr style="border: 0; height: 1px; background: #2a2e39; margin: 8px 0;">
-            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #b0b3b8;">
-                <div>💡 <b>Investitions-Simulation:</b></div>
-                <div>
-                    <span>Bei <b>1.000 €</b> Einsatz: <span style="color: #00c853;">+{gain_1k:.2f} €</span> / <span style="color: #ff3d00;">-{loss_1k:.2f} €</span></span>
-                    <span style="margin-left: 20px;">Bei <b>10.000 €</b> Einsatz: <span style="color: #00c853;">+{gain_10k:.2f} €</span> / <span style="color: #ff3d00;">-{loss_10k:.2f} €</span></span>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.info(f"🕯️ **Erkannte Candlestick-Muster (Aktuelle Kerze):** {candle_result['reason']}")
-    st.divider()
-    
-    st.subheader(f"📈 Trading-Chart & Mini-KI Signale: {selected_asset_label}")
-    fig = make_subplots(
-        rows=2,
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.05,
-        row_heights=[0.7, 0.3],
-        subplot_titles=(
-            "Kursverlauf & KI-Kauf/Verkaufssignale",
-            f"RSI Indikator ({rsi_period})",
-        ),
-    )
-    
-    fig.add_trace(
-        go.Candlestick(
-            x=df.index,
-            open=df["Open"],
-            high=df["High"],
-            low=df["Low"],
-            close=df["Close"],
-            name="Kurs",
-            increasing_line_color="#00c853",
-            decreasing_line_color="#ff3d00",
-            hoverinfo="text",
-        ),
-        row=1,
-        col=1,
-    )
-    
-    kauf_df = df[df["Signal"] == "KAUFEN"]
-    if not kauf_df.empty:
-        fig.add_trace(
-            go.Scatter(
-                x=kauf_df.index,
-                y=kauf_df["Low"] * 0.99,
-                mode="markers",
-                marker=dict(symbol="triangle-up", size=11, color="#00c853"),
-                name="KI Kaufsignal",
-                text="🟢 KI Kaufsignal (RSI Überverkauft)",
-                hoverinfo="text",
-            ),
-            row=1,
-            col=1,
-        )
+        results = []
+        total = len(tasks)
+        completed = 0
         
-    verkauf_df = df[df["Signal"] == "VERKAUFEN"]
-    if not verkauf_df.empty:
-        fig.add_trace(
-            go.Scatter(
-                x=verkauf_df.index,
-                y=verkauf_df["High"] * 1.01,
-                mode="markers",
-                marker=dict(symbol="triangle-down", size=11, color="#ff3d00"),
-                name="KI Verkaufssignal",
-                text="🔴 KI Verkaufssignal (RSI Überkauft)",
-                hoverinfo="text",
-            ),
-            row=1,
-            col=1,
-        )
-        
-    fig.add_trace(
-        go.Scatter(
-            x=df.index,
-            y=df["RSI"],
-            mode="lines",
-            name="RSI",
-            line=dict(color="#29b6f6", width=1.5),
-        ),
-        row=2,
-        col=1,
-    )
-    
-    fig.add_hline(
-        y=overbought_level,
-        line_dash="dash",
-        line_color="#ff3d00",
-        row=2,
-        col=1,
-        annotation_text="Überkauft",
-    )
-    fig.add_hline(
-        y=oversold_level,
-        line_dash="dash",
-        line_color="#00c853",
-        row=2,
-        col=1,
-        annotation_text="Überverkauft",
-    )
-    
-    fig.update_layout(
-        template="plotly_dark",
-        xaxis_title="Datum / Uhrzeit",
-        xaxis2_title="Datum / Uhrzeit",
-        yaxis_title=f"Preis ({currency_symbol})",
-        yaxis2_title="RSI Wert",
-        xaxis_rangeslider_visible=False,
-        height=650,
-        margin=dict(l=20, r=20, t=40, b=20),
-        showlegend=True,
-    )
-    fig.update_xaxes(tickformat="%d.%m.%Y\n%H:%M:%S", gridcolor="#2a2e39")
-    fig.update_xaxes(gridcolor="#2a2e39", row=2, col=1)
-    fig.update_yaxes(gridcolor="#2a2e39")
-    
-    st.plotly_chart(fig, use_container_width=True)
-    st.divider()
-    
-    # ==============================================================================
-    # 8. AUTOMATISCHES MINI-KI SIGNAL- & STRATEGIE-LOGBUCH
-    # ==============================================================================
-    st.subheader("🤖 Automatischer Mini-KI Signal-Scanner & Denkprozess")
-    
-    aktuelle_strategie = config.get("active_strategy", "RSI-Reversal-v1")
-    
-    if letzter_rsi < oversold_level:
-        automatisches_signal = "KAUFEN"
-        ki_gedanke = f"🟢 **Signal erkannt ({aktuelle_strategie}):** RSI steht bei {letzter_rsi:.1f}. Kerzenmuster: {candle_result['reason']}. Die KI hat automatisch ein Kaufsignal ausgelöst!"
-    elif letzter_rsi > overbought_level:
-        automatisches_signal = "VERKAUFEN"
-        ki_gedanke = f"🔴 **Signal erkannt ({aktuelle_strategie}):** RSI hat {letzter_rsi:.1f} erreicht. Kerzenmuster: {candle_result['reason']}. Die KI hat automatisch ein Verkaufssignal ausgelöst!"
-    else:
-        automatisches_signal = "NEUTRAL"
-        ki_gedanke = f"⚪ **Markt-Monitoring ({aktuelle_strategie}):** Neutraler Bereich bei RSI {letzter_rsi:.1f}. Aktuelles Muster: {candle_result['reason']}."
-        
-    st.info(ki_gedanke)
-    
-    logs = load_trade_logs()
-    if automatisches_signal != "NEUTRAL":
-        aktueller_zeitstempel = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-        if not logs or logs[0]["Signal"] != automatisches_signal or logs[0]["Coin"] != selected_asset_label:
-            neuer_eintrag = {
-                "Zeitstempel": aktueller_zeitstempel,
-                "Coin": selected_asset_label,
-                "Signal": final_signal,
-                "Kurs": format_de_number(aktueller_kurs, True, currency_symbol),
-                "RSI-Wert": f"{letzter_rsi:.1f}",
-                "Win-Prob": f"{win_probability:.1f}%",
-                "Muster": candle_result["reason"],
-                "KI-Lernstatus": "🧠 Automatisch erfasst & gemerkt"
-            }
-            logs.insert(0, neuer_eintrag)
-            save_trade_logs(logs)
+        for f in asyncio.as_completed(tasks):
+            res = await f
+            results.append(res)
+            completed += 1
+            progress_bar.progress(completed / total)
+            status_text.text(f"Scanne Plattformen: {completed}/{total}...")
             
-            # 🚀 HIER WIRD DAS SIGNAL AUTOMATISCH AN DEN BOT (bot_trades.csv) ÜBERGEBEN:
-            if "KAUFEN" in final_signal:
-                log_trade_signal_to_csv(ticker_symbol, "BUY", aktueller_kurs)
-            elif "VERKAUFEN" in final_signal:
-                log_trade_signal_to_csv(ticker_symbol, "SELL", aktueller_kurs)
-            
-    st.subheader("📋 Automatisches Strategie- & Signal-Logbuch (Sekundengenau)")
-    
-    if not logs or not isinstance(logs, list) or len(logs) == 0:
-        st.info("Der automatische Scanner überwacht den Markt. Sobald ein Signal durchbrochen wird, trägt sich das Signal hier von selbst ein.")
-    else:
-        clean_logs = [l for l in logs if isinstance(l, dict) and "Zeitstempel" in l]
-        df_logbuch = pd.DataFrame(clean_logs)
-        st.dataframe(df_logbuch, use_container_width=True, hide_index=True)
-        
-        if st.button("🗑️ Logbuch zurücksetzen"):
-            if os.path.exists(LOG_FILE):
-                os.remove(LOG_FILE)
-            if os.path.exists(BOT_SIGNAL_FILE):
-                os.remove(BOT_SIGNAL_FILE)
-            st.success("Logbuch und Bot-Signale wurden geleert!")
-            st.rerun()
+        return results
 
-# ==============================================================================
-# TAB 2: MINI-KI & PARAMETER KONFIGURATION
-# ==============================================================================
-with tab2:
-    st.subheader("⚙️ KI-Parameter & Strategie-Verwaltung")
-    st.write("Passe hier die Schwellenwerte an. Die KI speichert funktionierende Parameter im Memory ab.")
-    
-    rsi_p = st.slider(
-        "RSI Periode (Tage/Kerzen)",
-        min_value=5,
-        max_value=30,
-        value=rsi_period,
-    )
-    ob_level = st.slider(
-        "Überkauft-Schwelle (Verkaufssignal)",
-        min_value=50,
-        max_value=90,
-        value=overbought_level,
-    )
-    os_level = st.slider(
-        "Überverkauft-Schwelle (Kaufsignal)",
-        min_value=10,
-        max_value=50,
-        value=oversold_level,
-    )
-    
-    if st.button("Einstellungen & KI-Gedächtnis speichern", type="primary"):
-        neue_config = {
-            "rsi_period": rsi_p,
-            "overbought": ob_level,
-            "oversold": os_level,
-            "active_strategy": f"RSI-Custom-{rsi_p}-({os_level}/{ob_level})"
-        }
-        save_config(neue_config)
-        st.success("✅ Einstellungen & Strategie erfolgreich gespeichert!")
-        st.rerun()
+# --- INITIALISIERUNG ---
+if "scan_results" not in st.session_state:
+    st.session_state["scan_results"] = None
+if "scanned_query" not in st.session_state:
+    st.session_state["scanned_query"] = ""
+
+# --- SIDEBAR EINSTELLUNGEN ---
+st.sidebar.title("⚙️ Engine Konfiguration")
+selected_categories = st.sidebar.multiselect("Kategorien auswählen:", options=list(PLATFORMS_DB.keys()), default=list(PLATFORMS_DB.keys()))
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🚀 Performance Settings")
+max_threads = st.sidebar.slider("Parallel Verbindungen", min_value=5, max_value=50, value=20)
+request_timeout = st.sidebar.slider("Timeout (Sekunden)", min_value=2, max_value=15, value=5)
+
+active_targets = []
+for cat in selected_categories:
+    for name, url in PLATFORMS_DB[cat].items():
+        active_targets.append((name, cat, url))
+
+# --- MAIN UI ---
+st.title("👁️ Stealth OSINT Engine v4.0 Ultra")
+st.markdown("Advanced Reconnaissance mit Deep-Metadata Extraction & Smart Input Routing.")
+
+input_query = st.text_input("Ziel-Benutzername oder E-Mail eingeben:", placeholder="z.B. alex123 oder target@domain.com")
+start_scan = st.button("🔍 Ultra Scan Starten")
+
+# SMART INPUT DETECTION
+is_email = "@" in input_query and "." in input_query
+clean_query = input_query.strip()
+
+if is_email:
+    st.info(f"💡 **E-Mail-Modus erkannt**: Nutze den Benutzernamen-Teil `{clean_query.split('@')[0]}` für Social-Media-Checks.")
+    search_handle = clean_query.split('@')[0]
+else:
+    search_handle = clean_query
+
+if start_scan:
+    if not clean_query:
+        st.warning("Bitte gib ein gültiges Target ein.")
+    else:
+        st.session_state["scanned_query"] = clean_query
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        results = asyncio.run(run_osint_scan(active_targets, search_handle, max_threads, request_timeout, progress_bar, status_text))
+
+        progress_bar.empty()
+        status_text.empty()
+        st.session_state["scan_results"] = results
+        st.success("Deep Scan abgeschlossen!")
+
+# --- RESULT DISPLAY ---
+if st.session_state["scan_results"]:
+    results = st.session_state["scan_results"]
+    found_list = [r for r in results if r["status"] == "FOUND"]
+    blocked_list = [r for r in results if r["status"] == "BLOCKED"]
+    not_found_list = [r for r in results if r["status"] == "NOT_FOUND"]
+    error_list = [r for r in results if r["status"] in ["ERROR", "TIMEOUT"]]
+
+    st.markdown("---")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("✅ Gefunden", len(found_list))
+    m2.metric("⚠️ Geblockt", len(blocked_list))
+    m3.metric("🚫 Nicht vorhanden", len(not_found_list))
+    m4.metric("❌ Fehler / Timeout", len(error_list))
+
+    tab_found, tab_dorks, tab_blocked, tab_export = st.tabs([
+        f"🎯 Profil-Karten ({len(found_list)})", 
+        "🔎 Google OSINT Dorks",
+        f"⚠️ Geblockt ({len(blocked_list)})", 
+        "💾 Export"
+    ])
+
+    # PROFIL KARTEN MIT METADATEN & BILDERN
+    with tab_found:
+        if found_list:
+            for item in found_list:
+                meta = item.get("metadata", {})
+                
+                with st.container():
+                    st.markdown(f"### [{item['category']}] {item['name']}")
+                    col_img, col_info = st.columns([1, 4])
+                    
+                    with col_img:
+                        if meta.get("image"):
+                            st.image(meta["image"], width=100)
+                        else:
+                            st.write("📷 Kein Bild")
+                            
+                    with col_info:
+                        if meta.get("title"):
+                            st.markdown(f"**Titel:** {meta['title']}")
+                        if meta.get("description"):
+                            st.markdown(f"**Bio/Info:** _{meta['description']}_")
+                        st.markdown(f"🔗 **URL:** [{item['url']}]({item['url']})")
+                    st.markdown("---")
+        else:
+            st.write("Keine aktiven Profile gefunden.")
+
+    # GOOGLE DORKS GENERATOR
+    with tab_dorks:
+        st.markdown("### Automatisierte Google OSINT Search Dorks")
+        st.write("Klicke auf die Links, um gezielte Deep-Web-Suchen nach dem Target durchzuführen:")
+        
+        q_enc = quote(clean_query)
+        st.markdown(f"- 📄 **Gefundene Dokumente (PDF/DOCX):** [Google Suche](https://www.google.com/search?q=site:*+%22{q_enc}%22+filetype:pdf+OR+filetype:docx)")
+        st.markdown(f"- 💬 **Foren- und Pastebin-Einträge:** [Google Suche](https://www.google.com/search?q=site:pastebin.com+OR+site:github.com+%22{q_enc}%22)")
+        st.markdown(f"- 📱 **Social Media Erwähnungen:** [Google Suche](https://www.google.com/search?q=%22{q_enc}%22+site:twitter.com+OR+site:instagram.com)")
+
+    with tab_blocked:
+        for item in blocked_list:
+            st.markdown(f"- **{item['name']}** (Status {item.get('code')})")
+
+    with tab_export:
+        csv_buffer = io.StringIO()
+        writer = csv.writer(csv_buffer)
+        writer.writerow(["Name", "Kategorie", "Status", "URL", "Titel", "Description"])
+        for r in results:
+            meta = r.get("metadata", {})
+            writer.writerow([r["name"], r["category"], r["status"], r["url"], meta.get("title"), meta.get("description")])
+            
+        st.download_button(
+            label="📄 Als erweitertes CSV herunterladen",
+            data=csv_buffer.getvalue(),
+            file_name=f"ultra_osint_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
